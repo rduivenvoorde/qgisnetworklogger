@@ -34,7 +34,7 @@ class QgisNetworkLogger:
         self.iface.removePluginMenu('QGIS Network Logger',self.action)
         self.nam.requestAboutToBeCreated.connect(self.request_about_to_be_created)
         self.nam.requestCreated.connect(self.request_created)
-        self.nam.requestTimedOut.connect(self.timeout)
+        self.nam.requestTimedOut.connect(self.request_timeout)
         self.nam.request_finished.connect(self.request_finished)
 
 
