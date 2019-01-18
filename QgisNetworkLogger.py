@@ -34,8 +34,8 @@ class QgisNetworkLogger:
         self.iface.removePluginMenu('QGIS Network Logger',self.action)
         self.nam.requestAboutToBeCreated.connect(self.request_about_to_be_created)
         self.nam.requestCreated.connect(self.request_created)
-        self.nam.requestTimedOut.connect(self.request_timeout)
-        self.nam.request_finished.connect(self.request_finished)
+        self.nam.requestTimedOut.connect(self.request_timed_out)
+        self.nam.finished.connect(self.request_finished)
 
 
     def show_dialog(self):
@@ -51,7 +51,7 @@ class QgisNetworkLogger:
     def log_it(self):
         self.nam.requestAboutToBeCreated.connect(self.request_about_to_be_created)
         #self.nam.requestCreated.connect(self.request_created)
-        self.nam.requestTimedOut.connect(self.request_timeout)
+        self.nam.requestTimedOut.connect(self.request_timed_out)
         #self.nam.finished.connect(self.request_finished)
 
     def show(self, msg):
@@ -72,7 +72,7 @@ class QgisNetworkLogger:
             self.show("- Request data: {}".format(data))
 
 
-    def request_timeout(self, reply):
+    def request_timed_out(self, reply):
         url = reply.url().url()
         self.show('# Timeout or abort: <a href="{}">{}</a>'.format(url, url))
 
