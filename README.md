@@ -8,3 +8,7 @@ Current limitations:
 To use:
 - install plugin
 - open the messagelog panel and view panel named "QGIS Network Logger..."
+
+For Example:
+
+![Example Log](/img/examplelog.png)
