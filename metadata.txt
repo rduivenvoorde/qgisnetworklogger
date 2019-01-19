@@ -2,8 +2,9 @@
 name=QGIS Network Logger
 qgisMinimumVersion=2.99
 qgisMaximumVersion=3.99
-description=This plugin tries to log the requests that go via the QgsNetworkAccessManager
-  So you can see which requests are fired from withing QGIS or plugins.
+description=This plugin tries to log the HTTP(s) requests that go via the QgsNetworkAccessManager.
+  So you can see ALL requests which are fired from within QGIS or plugins.
+  Thanks to Alessandro Pasotti for the last push!
 version=0.1.0
 author=Richard Duivenvoorde
 email=richard@duif.net

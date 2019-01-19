@@ -65,7 +65,7 @@ class QgisNetworkLogger:
         elif operation == 3: op = "PUT"
         elif operation == 4: op = "POST"
         elif operation == 5: op = "DELETE"
-        # PyQt5.QtNetwork.QNetworkRequest
+        # request is a PyQt5.QtNetwork.QNetworkRequest
         url = request.url().url()
         self.show('Requesting: {} <a href="{}">{}</a>'.format(op, url, url))
         if data is not None:
