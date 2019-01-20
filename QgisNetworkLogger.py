@@ -32,11 +32,17 @@ class QgisNetworkLogger:
     def unload(self):
         # Remove the plugin menu item
         self.iface.removePluginMenu('QGIS Network Logger',self.action)
-        self.nam.requestAboutToBeCreated.connect(self.request_about_to_be_created)
-        self.nam.requestCreated.connect(self.request_created)
-        self.nam.requestTimedOut.connect(self.request_timed_out)
-        self.nam.finished.connect(self.request_finished)
+        self.nam.requestAboutToBeCreated.disconnect(self.request_about_to_be_created)
+        #self.nam.requestCreated.disconnect(self.request_created)
+        self.nam.requestTimedOut.disconnect(self.request_timed_out)
+        #self.nam.finished.disconnect(self.request_finished)
 
+    def log_it(self):
+        # IF connecting to other signals, please do not forget to disconnect them in the unload function above
+        self.nam.requestAboutToBeCreated.connect(self.request_about_to_be_created)
+        #self.nam.requestCreated.connect(self.request_created)
+        self.nam.requestTimedOut.connect(self.request_timed_out)
+        #self.nam.finished.connect(self.request_finished)
 
     def show_dialog(self):
         QMessageBox.information(
@@ -47,12 +53,6 @@ class QgisNetworkLogger:
                                                             'Only listening to the requestAboutToBeCreated and requestTimedOut signals.\n\n'
                                                             'if you want more: see code'))
         return
-
-    def log_it(self):
-        self.nam.requestAboutToBeCreated.connect(self.request_about_to_be_created)
-        #self.nam.requestCreated.connect(self.request_created)
-        self.nam.requestTimedOut.connect(self.request_timed_out)
-        #self.nam.finished.connect(self.request_finished)
 
     def show(self, msg):
         #print(msg)
