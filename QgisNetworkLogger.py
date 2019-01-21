@@ -1,13 +1,21 @@
 # -*- coding: utf-8 -*-
-# Import the PyQt and QGIS libraries
-from qgis.PyQt.QtCore import *
-from qgis.PyQt.QtGui import *
-from qgis.PyQt.QtWidgets import *
-from qgis.core import *
-
-from qgis.PyQt.QtNetwork import QNetworkRequest
 
 import os
+
+from qgis.core import (
+    QgsNetworkAccessManager,
+    QgsMessageLog,
+    Qgis
+)
+
+from qgis.PyQt.QtCore import QCoreApplication
+from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtWidgets import (
+    QAction,
+    QMessageBox
+)
+from qgis.PyQt.QtNetwork import QNetworkRequest
+
 
 class QgisNetworkLogger:
 
