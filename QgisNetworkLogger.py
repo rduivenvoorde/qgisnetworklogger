@@ -28,7 +28,8 @@ class QgisNetworkLogger:
 
     def initGui(self):
         # Create action that will start plugina
-        self.action = QAction(QIcon(os.path.dirname(__file__)+'/icons/icon.png'), '&QGIS Network Logger', self.iface.mainWindow())
+        self.action = QAction(QIcon(os.path.dirname(__file__) + '/icons/icon.png'), '&QGIS Network Logger',
+                              self.iface.mainWindow())
         # connect the action to the run method
         self.action.triggered.connect(self.show_dialog)
 
@@ -39,18 +40,18 @@ class QgisNetworkLogger:
 
     def unload(self):
         # Remove the plugin menu item
-        self.iface.removePluginMenu('QGIS Network Logger',self.action)
+        self.iface.removePluginMenu('QGIS Network Logger', self.action)
         self.nam.requestAboutToBeCreated.disconnect(self.request_about_to_be_created)
-        #self.nam.requestCreated.disconnect(self.request_created)
+        # self.nam.requestCreated.disconnect(self.request_created)
         self.nam.requestTimedOut.disconnect(self.request_timed_out)
-        #self.nam.finished.disconnect(self.request_finished)
+        # self.nam.finished.disconnect(self.request_finished)
 
     def log_it(self):
         # IF connecting to other signals, please do not forget to disconnect them in the unload function above
         self.nam.requestAboutToBeCreated.connect(self.request_about_to_be_created)
-        #self.nam.requestCreated.connect(self.request_created)
+        # self.nam.requestCreated.connect(self.request_created)
         self.nam.requestTimedOut.connect(self.request_timed_out)
-        #self.nam.finished.connect(self.request_finished)
+        # self.nam.finished.connect(self.request_finished)
 
     def show_dialog(self):
         QMessageBox.information(
@@ -68,17 +69,21 @@ class QgisNetworkLogger:
 
     def request_about_to_be_created(self, operation, request, data):
         op = "Custom"
-        if operation == 1: op = "HEAD"
-        elif operation == 2: op = "GET"
-        elif operation == 3: op = "PUT"
-        elif operation == 4: op = "POST"
-        elif operation == 5: op = "DELETE"
+        if operation == 1:
+            op = "HEAD"
+        elif operation == 2:
+            op = "GET"
+        elif operation == 3:
+            op = "PUT"
+        elif operation == 4:
+            op = "POST"
+        elif operation == 5:
+            op = "DELETE"
         # request is a PyQt5.QtNetwork.QNetworkRequest
         url = request.url().url()
         self.show('Requesting: {} <a href="{}">{}</a>'.format(op, url, url))
         if data is not None:
             self.show("- Request data: {}".format(data))
-
 
     def request_timed_out(self, reply):
         url = reply.url().url()
@@ -98,5 +103,4 @@ class QgisNetworkLogger:
             reply.isRunning()))
         if reply.header(QNetworkRequest.LocationHeader) is not None:
             self.show('- LocationHeader:{}'.format(reply.header(QNetworkRequest.LocationHeader)))
-        #print("headerlist: ", reply.rawHeaderList())
-
+        # print("headerlist: ", reply.rawHeaderList())
