@@ -55,8 +55,8 @@ class QgisNetworkLogger:
         return
 
     def show(self, msg):
-        #print(msg)
-        QgsMessageLog.logMessage(msg, "QGIS Network Logger...", Qgis.MessageLevel.Info)
+        # print(msg)
+        QgsMessageLog.logMessage(msg, "QGIS Network Logger...", Qgis.Info)
 
     def request_about_to_be_created(self, operation, request, data):
         op = "Custom"
