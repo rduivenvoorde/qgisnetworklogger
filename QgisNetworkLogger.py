@@ -32,16 +32,18 @@ class QgisNetworkLogger:
     def unload(self):
         # Remove the plugin menu item
         self.iface.removePluginMenu('QGIS Network Logger',self.action)
-        self.nam.requestAboutToBeCreated.disconnect(self.request_about_to_be_created)
+        self.nam.requestAboutToBeCreated[QgsNetworkRequestParameters].disconnect(self.request_about_to_be_created)
+        #self.nam.requestAboutToBeCreated.disconnect(self.request_about_to_be_created)
         #self.nam.requestCreated.disconnect(self.request_created)
-        self.nam.requestTimedOut.disconnect(self.request_timed_out)
+        #self.nam.requestTimedOut.disconnect(self.request_timed_out)
         #self.nam.finished.disconnect(self.request_finished)
 
     def log_it(self):
         # IF connecting to other signals, please do not forget to disconnect them in the unload function above
-        self.nam.requestAboutToBeCreated.connect(self.request_about_to_be_created)
+        self.nam.requestAboutToBeCreated[QgsNetworkRequestParameters].connect(self.request_about_to_be_created)
+        #self.nam.requestAboutToBeCreated.connect(self.request_about_to_be_created)
         #self.nam.requestCreated.connect(self.request_created)
-        self.nam.requestTimedOut.connect(self.request_timed_out)
+        #self.nam.requestTimedOut.connect(self.request_timed_out)
         #self.nam.finished.connect(self.request_finished)
 
     def show_dialog(self):
@@ -58,7 +60,23 @@ class QgisNetworkLogger:
         #print(msg)
         QgsMessageLog.logMessage(msg, "QGIS Network Logger...", Qgis.MessageLevel.Info)
 
-    def request_about_to_be_created(self, operation, request, data):
+    # def request_about_to_be_created(self, operation, request, data):
+    #     op = "Custom"
+    #     if operation == 1: op = "HEAD"
+    #     elif operation == 2: op = "GET"
+    #     elif operation == 3: op = "PUT"
+    #     elif operation == 4: op = "POST"
+    #     elif operation == 5: op = "DELETE"
+    #     # request is a PyQt5.QtNetwork.QNetworkRequest
+    #     url = request.url().url()
+    #     self.show('Requesting: {} <a href="{}">{}</a>'.format(op, url, url))
+    #     if data is not None:
+    #         self.show("- Request data: {}".format(data))
+
+    #@pyqtSlot(QgsNetworkRequestParameters)
+    def request_about_to_be_created(self, request_params):
+        #self.show('RequestingAboutToBeCreated: {} '.format(request_params))
+        operation = request_params.operation()
         op = "Custom"
         if operation == 1: op = "HEAD"
         elif operation == 2: op = "GET"
@@ -66,11 +84,11 @@ class QgisNetworkLogger:
         elif operation == 4: op = "POST"
         elif operation == 5: op = "DELETE"
         # request is a PyQt5.QtNetwork.QNetworkRequest
-        url = request.url().url()
-        self.show('Requesting: {} <a href="{}">{}</a>'.format(op, url, url))
-        if data is not None:
-            self.show("- Request data: {}".format(data))
-
+        url = request_params.request().url().url()
+        thread_id = request_params.originatingThreadId()
+        self.show('RequestingAboutToBeCreated: {} in thread {} <a href="{}">{}</a>'.format(op, thread_id, url, url))
+        #if data is not None:
+        #    self.show("- Request data: {}".format(data))
 
     def request_timed_out(self, reply):
         url = reply.url().url()
@@ -78,7 +96,7 @@ class QgisNetworkLogger:
 
     def request_created(self, reply):
         if reply is not None:
-            self.show('# Request created: "{}"'.format(reply.url()))
+            self.show('# RequestCreated: "{}"'.format(reply))
 
     def request_finished(self, reply):
         url = reply.url().url()
