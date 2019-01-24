@@ -305,6 +305,8 @@ class NetworkActivityModel(QAbstractItemModel):
         super().__init__(parent)
         self.root_item = RootItem()
 
+        self.is_paused = False
+
         nam = QgsNetworkAccessManager.instance()
 
         nam.requestAboutToBeCreated[QgsNetworkRequestParameters].connect(self.request_about_to_be_created)
@@ -399,6 +401,16 @@ class NetworkActivityModel(QAbstractItemModel):
         self.request_indices = {}
         self.endResetModel()
 
+    def pause(self, state):
+        if state == self.is_paused:
+            return
+
+        self.is_paused = state
+        if self.is_paused:
+            QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].disconnect(self.request_about_to_be_created)
+        else:
+            QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].connect(self.request_about_to_be_created)
+
 
 class ActivityView(QTreeView):
     def __init__(self, parent=None):
@@ -428,6 +440,9 @@ class ActivityView(QTreeView):
     def clear(self):
         self.model.clear()
 
+    def pause(self, state):
+        self.model.pause(state)
+
     def context_menu(self, point):
         index = self.indexAt(point)
         if index.isValid():
@@ -455,11 +470,15 @@ class NetworkActivityDock(QgsDockWidget):
         l.setContentsMargins(0,0,0,0)
 
         self.clear_action = QAction('Clear')
+        self.pause_action = QAction('Pause')
+        self.pause_action.setCheckable(True)
 
         self.toolbar = QToolBar()
         self.toolbar.setIconSize(iface.iconSize(True))
         self.toolbar.addAction(self.clear_action)
+        self.toolbar.addAction(self.pause_action)
         self.clear_action.triggered.connect(self.view.clear)
+        self.pause_action.toggled.connect(self.view.pause)
         l.addWidget(self.toolbar)
         l.addWidget(self.view)
         w = QWidget()
