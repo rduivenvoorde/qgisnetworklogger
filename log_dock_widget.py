@@ -23,11 +23,13 @@ from qgis.PyQt.QtWidgets import (
     QToolBar,
     QVBoxLayout,
     QWidget,
-    QAction
+    QAction,
+    QMenu
 )
 from qgis.PyQt.QtGui import (
     QPen,
-    QColor
+    QColor,
+    QDesktopServices
 )
 from qgis.PyQt.QtNetwork import (
     QNetworkAccessManager,
@@ -73,6 +75,9 @@ class ActivityTreeItem(object):
     def createWidget(self):
         return None
 
+    def actions(self):
+        return []
+
 
 class RootItem(ActivityTreeItem):
     def __init__(self, parent=None):
@@ -88,6 +93,9 @@ class RequestParentItem(ActivityTreeItem):
 
         self.status = PENDING
 
+        self.open_url_action = QAction('Open URL')
+        self.open_url_action.triggered.connect(self.open_url)
+
     def span(self):
         return True
 
@@ -96,6 +104,9 @@ class RequestParentItem(ActivityTreeItem):
             return self.url.url()
         return ''
 
+    def open_url(self):
+        QDesktopServices.openUrl(self.url)
+
     def set_reply(self, reply):
         if reply.error() != QNetworkReply.NoError:
             self.status = ERROR
@@ -103,6 +114,8 @@ class RequestParentItem(ActivityTreeItem):
             self.status = COMPLETE
         ReplyItem(reply, self)
 
+    def actions(self):
+        return [self.open_url_action]
 
 class RequestItem(ActivityTreeItem):
     def __init__(self, request, parent=None):
@@ -126,6 +139,8 @@ class RequestItem(ActivityTreeItem):
         RequestDetailsItem('Operation', op, self)
         RequestDetailsItem('Thread', request.originatingThreadId(), self)
         RequestHeadersItem(request, self)
+        if op in ('POST', 'PUT'):
+            PostContentItem(request,self)
 
     def span(self):
         return True
@@ -164,6 +179,36 @@ class RequestHeadersItem(ActivityTreeItem):
 
     def span(self):
         return True
+
+
+class PostContentItem(ActivityTreeItem):
+    def __init__(self, request, parent=None):
+        super().__init__('Content', parent)
+
+        # maybe should be &amp?
+        for p in request.content().data().decode('utf-8').split('&'):
+            PostDetailsItem(p, self)
+
+    def text(self, column):
+        if column == 0:
+            return 'Content'
+        else:
+            return ''
+
+    def span(self):
+        return True
+
+class PostDetailsItem(ActivityTreeItem):
+    def __init__(self, part, parent=None):
+        super().__init__('', parent)
+
+        self.description, self.value = part.split('=')
+
+    def text(self, column):
+        if column == 0:
+            return self.description
+        else:
+            return self.value
 
 
 class ReplyItem(ActivityTreeItem):
@@ -364,6 +409,9 @@ class ActivityView(QTreeView):
         self.model.rowsInserted.connect(self.rows_inserted)
         self.setItemDelegate(ItemDelegate(self))
 
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.context_menu)
+
     def rows_inserted(self, parent, first, last):
         # silly qt API - this shouldn't be so hard!
         for r in range(first, last + 1):
@@ -379,6 +427,22 @@ class ActivityView(QTreeView):
 
     def clear(self):
         self.model.clear()
+
+    def context_menu(self, point):
+        index = self.indexAt(point)
+        if index.isValid():
+            menu = QMenu()
+            populated = False
+            for a in index.internalPointer().actions():
+                menu.addAction(a)
+                populated = True
+            if populated:
+                menu.addSeparator()
+
+            clear_action = QAction('Clear')
+            clear_action.triggered.connect(self.clear)
+            menu.addAction(clear_action)
+            menu.exec(self.viewport().mapToGlobal(point))
 
 class NetworkActivityDock(QgsDockWidget):
 
