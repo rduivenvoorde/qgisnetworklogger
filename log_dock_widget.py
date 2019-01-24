@@ -19,7 +19,11 @@ from qgis.PyQt.QtWidgets import (
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QStyle,
-    qApp
+    qApp,
+    QToolBar,
+    QVBoxLayout,
+    QWidget,
+    QAction
 )
 from qgis.PyQt.QtGui import (
     QPen,
@@ -36,6 +40,7 @@ from qgis.core import (
     QgsNetworkReplyContent,
     QgsNetworkRequestParameters
 )
+from qgis.utils import iface
 
 STATUS_ROLE = Qt.UserRole + 1
 
@@ -251,9 +256,9 @@ class ItemDelegate(QStyledItemDelegate):
         painter.restore()
 
 class NetworkActivityModel(QAbstractItemModel):
-    def __init__(self, root_item, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.root_item = root_item
+        self.root_item = RootItem()
 
         nam = QgsNetworkAccessManager.instance()
 
@@ -342,11 +347,18 @@ class NetworkActivityModel(QAbstractItemModel):
         if section == 0 and orientation == Qt.Horizontal and role == Qt.DisplayRole:
             return "Requests"
 
+    def clear(self):
+        self.beginResetModel()
+        self.root_item = RootItem()
+        self.requests_items = {}
+        self.request_indices = {}
+        self.endResetModel()
+
 
 class ActivityView(QTreeView):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.model = NetworkActivityModel(RootItem(), self)
+        self.model = NetworkActivityModel(self)
         self.setModel(self.model)
 
         self.model.rowsInserted.connect(self.rows_inserted)
@@ -365,6 +377,8 @@ class ActivityView(QTreeView):
             if w:
                 self.setIndexWidget(this_index, w)
 
+    def clear(self):
+        self.model.clear()
 
 class NetworkActivityDock(QgsDockWidget):
 
@@ -372,4 +386,20 @@ class NetworkActivityDock(QgsDockWidget):
         super().__init__()
         self.setWindowTitle('Network Activity')
         self.view = ActivityView()
-        self.setWidget(self.view)
+
+        l = QVBoxLayout()
+        l.setContentsMargins(0,0,0,0)
+
+        self.clear_action = QAction('Clear')
+
+        self.toolbar = QToolBar()
+        self.toolbar.setIconSize(iface.iconSize(True))
+        self.toolbar.addAction(self.clear_action)
+        self.clear_action.triggered.connect(self.view.clear)
+        l.addWidget(self.toolbar)
+        l.addWidget(self.view)
+        w = QWidget()
+        w.setLayout(l)
+        self.setWidget(w)
+
+
