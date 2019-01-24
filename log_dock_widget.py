@@ -89,9 +89,9 @@ class RequestParentItem(ActivityTreeItem):
     def text(self, column):
         if column == 0:
             return self.url.url()
+        return ''
 
     def set_reply(self, reply):
-        # todo - emit row added signals?
         if reply.error() != QNetworkReply.NoError:
             self.status = ERROR
         else:
@@ -126,7 +126,7 @@ class RequestItem(ActivityTreeItem):
         return True
 
     def text(self, column):
-        return 'Request' if column == 0 else None
+        return 'Request' if column == 0 else ''
 
 
 class RequestDetailsItem(ActivityTreeItem):
@@ -155,7 +155,7 @@ class RequestHeadersItem(ActivityTreeItem):
         if column == 0:
             return 'Headers'
         else:
-            return None
+            return ''
 
     def span(self):
         return True
@@ -175,7 +175,7 @@ class ReplyItem(ActivityTreeItem):
         return True
 
     def text(self, column):
-        return 'Reply' if column == 0 else None
+        return 'Reply' if column == 0 else ''
 
 
 class ReplyHeadersItem(ActivityTreeItem):
@@ -190,7 +190,7 @@ class ReplyHeadersItem(ActivityTreeItem):
         if column == 0:
             return 'Headers'
         else:
-            return None
+            return ''
 
     def span(self):
         return True
@@ -274,9 +274,14 @@ class NetworkActivityModel(QAbstractItemModel):
         if not reply.requestId() in self.requests_items:
             return
 
+        request_index = self.request_indices[reply.requestId()]
         request_item = self.requests_items[reply.requestId()]
+
+        self.beginInsertRows(request_index, len(request_item.children), len(request_item.children))
         request_item.set_reply(reply)
-        self.dataChanged.emit(self.request_indices[reply.requestId()],self.request_indices[reply.requestId()])
+        self.endInsertRows()
+
+        self.dataChanged.emit(request_index,request_index)
 
     def request_timed_out(self, request_params):
         # TODO
