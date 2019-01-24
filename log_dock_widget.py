@@ -16,11 +16,19 @@ from qgis.PyQt.QtCore import (
 )
 from qgis.PyQt.QtWidgets import (
     QTreeView,
-    QLabel
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QStyle,
+    qApp
+)
+from qgis.PyQt.QtGui import (
+    QPen,
+    QColor
 )
 from qgis.PyQt.QtNetwork import (
     QNetworkAccessManager,
-    QNetworkRequest
+    QNetworkRequest,
+    QNetworkReply
 )
 from qgis.gui import QgsDockWidget
 from qgis.core import (
@@ -28,6 +36,12 @@ from qgis.core import (
     QgsNetworkReplyContent,
     QgsNetworkRequestParameters
 )
+
+STATUS_ROLE = Qt.UserRole + 1
+
+PENDING = 'PENDING'
+COMPLETE = 'COMPLETE'
+ERROR = 'ERROR'
 
 
 class ActivityTreeItem(object):
@@ -38,6 +52,7 @@ class ActivityTreeItem(object):
 
         self.parent = parent
         self.children = []
+        self.status = COMPLETE
         if parent:
             parent.children.append(self)
 
@@ -60,28 +75,28 @@ class RootItem(ActivityTreeItem):
 
 
 class RequestParentItem(ActivityTreeItem):
+
     def __init__(self, request, parent=None):
         super().__init__('', parent)
         self.url = request.request().url()
         RequestItem(request, self)
 
+        self.status = PENDING
+
     def span(self):
         return True
 
     def text(self, column):
-        return None
-
-    def tooltip(self, column):
-        return self.url.url()
+        if column == 0:
+            return self.url.url()
 
     def set_reply(self, reply):
         # todo - emit row added signals?
+        if reply.error() != QNetworkReply.NoError:
+            self.status = ERROR
+        else:
+            self.status = COMPLETE
         ReplyItem(reply, self)
-
-    def createWidget(self):
-        label = QLabel('<a href="{}">{}</a>'.format(self.url.url(), self.url.url()))
-        label.setOpenExternalLinks(True)
-        return label
 
 
 class RequestItem(ActivityTreeItem):
@@ -150,6 +165,10 @@ class ReplyItem(ActivityTreeItem):
     def __init__(self, reply, parent=None):
         super().__init__('', parent)
         ReplyDetailsItem('Status', reply.attribute(QNetworkRequest.HttpStatusCodeAttribute), self)
+        if reply.error() != QNetworkReply.NoError:
+            ReplyDetailsItem('Error Code', reply.error(), self)
+            ReplyDetailsItem('Error', reply.errorString(), self)
+
         ReplyHeadersItem(reply, self)
 
     def span(self):
@@ -191,6 +210,46 @@ class ReplyDetailsItem(ActivityTreeItem):
             return self.value
 
 
+class ItemDelegate(QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def paint(self, painter, option, index):
+        val = index.data(Qt.DisplayRole)
+        if not val:
+            return
+
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+
+        # original command that would draw the whole thing with default style
+        #style.drawControl(QStyle.CE_ItemViewItem, opt, painter)
+
+        style = qApp.style()
+        painter.save()
+        painter.setClipRect(opt.rect)
+
+        # background
+        style.drawPrimitive(QStyle.PE_PanelItemViewItem, opt, painter, None)
+
+        text_margin = style.pixelMetric(QStyle.PM_FocusFrameHMargin, None, None) + 1
+        text_rect = opt.rect.adjusted(text_margin, 0, -text_margin, 0) # remove width padding
+
+        # variable name
+        painter.save()
+        if index.data(STATUS_ROLE) == PENDING:
+            color = QColor(0,0,0,100)
+        elif index.data(STATUS_ROLE) == ERROR:
+            color = QColor(235, 10, 10)
+        else:
+            color = QColor(0,0,0)
+
+        painter.setPen(QPen(color))
+        used_rect = painter.drawText(text_rect, Qt.AlignLeft, str(val))
+        painter.restore()
+
+        painter.restore()
+
 class NetworkActivityModel(QAbstractItemModel):
     def __init__(self, root_item, parent=None):
         super().__init__(parent)
@@ -202,16 +261,22 @@ class NetworkActivityModel(QAbstractItemModel):
         nam.finished[QgsNetworkReplyContent].connect(self.request_finished)
         nam.requestTimedOut[QgsNetworkRequestParameters].connect(self.request_timed_out)
 
-        self.requests = {}
+        self.requests_items = {}
+        self.request_indices = {}
 
     def request_about_to_be_created(self, request_params):
         self.beginInsertRows(QModelIndex(), len(self.root_item.children), len(self.root_item.children))
-        self.requests[request_params.requestId()] = RequestParentItem(request_params, self.root_item)
+        self.requests_items[request_params.requestId()] = RequestParentItem(request_params, self.root_item)
         self.endInsertRows()
+        self.request_indices[request_params.requestId()] = self.index(len(self.requests_items)-1,0,QModelIndex())
 
     def request_finished(self, reply):
-        request_item = self.requests[reply.requestId()]
+        if not reply.requestId() in self.requests_items:
+            return
+
+        request_item = self.requests_items[reply.requestId()]
         request_item.set_reply(reply)
+        self.dataChanged.emit(self.request_indices[reply.requestId()],self.request_indices[reply.requestId()])
 
     def request_timed_out(self, request_params):
         # TODO
@@ -241,6 +306,8 @@ class NetworkActivityModel(QAbstractItemModel):
             return item.text(index.column())
         elif role == Qt.ToolTipRole:
             return item.tooltip(index.column())
+        elif role == STATUS_ROLE:
+            return item.status
 
     def flags(self, index):
         if not index.isValid():
@@ -278,6 +345,7 @@ class ActivityView(QTreeView):
         self.setModel(self.model)
 
         self.model.rowsInserted.connect(self.rows_inserted)
+        self.setItemDelegate(ItemDelegate(self))
 
     def rows_inserted(self, parent, first, last):
         # silly qt API - this shouldn't be so hard!
