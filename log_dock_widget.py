@@ -17,10 +17,6 @@ from qgis.PyQt.QtCore import (
 )
 from qgis.PyQt.QtWidgets import (
     QTreeView,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
-    QStyle,
-    qApp,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -28,7 +24,8 @@ from qgis.PyQt.QtWidgets import (
     QMenu
 )
 from qgis.PyQt.QtGui import (
-    QPen,
+    QBrush,
+    QFont,
     QColor,
     QDesktopServices
 )
@@ -50,6 +47,7 @@ STATUS_ROLE = Qt.UserRole + 1
 PENDING = 'PENDING'
 COMPLETE = 'COMPLETE'
 ERROR = 'ERROR'
+CANCELED = 'CANCELED'
 
 
 class ActivityTreeItem(object):
@@ -109,7 +107,9 @@ class RequestParentItem(ActivityTreeItem):
         QDesktopServices.openUrl(self.url)
 
     def set_reply(self, reply):
-        if reply.error() != QNetworkReply.NoError:
+        if reply.error() == QNetworkReply.OperationCanceledError:
+            self.status = CANCELED
+        elif reply.error() != QNetworkReply.NoError:
             self.status = ERROR
         else:
             self.status = COMPLETE
@@ -138,8 +138,6 @@ class RequestItem(ActivityTreeItem):
             op = "DELETE"
 
         query = QUrlQuery(self.url)
-
-
         RequestDetailsItem('Operation', op, self)
         RequestDetailsItem('Thread', request.originatingThreadId(), self)
         RequestDetailsItem('Initiator', request.initiatorClassName() if request.initiatorClassName() else 'unknown', self)
@@ -285,46 +283,6 @@ class ReplyDetailsItem(ActivityTreeItem):
             return self.value
 
 
-class ItemDelegate(QStyledItemDelegate):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-    def paint(self, painter, option, index):
-        val = index.data(Qt.DisplayRole)
-        if not val:
-            return
-
-        opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-
-        # original command that would draw the whole thing with default style
-        #style.drawControl(QStyle.CE_ItemViewItem, opt, painter)
-
-        style = qApp.style()
-        painter.save()
-        painter.setClipRect(opt.rect)
-
-        # background
-        style.drawPrimitive(QStyle.PE_PanelItemViewItem, opt, painter, None)
-
-        text_margin = style.pixelMetric(QStyle.PM_FocusFrameHMargin, None, None) + 1
-        text_rect = opt.rect.adjusted(text_margin, 0, -text_margin, 0) # remove width padding
-
-        # variable name
-        painter.save()
-        if index.data(STATUS_ROLE) == PENDING:
-            color = QColor(0,0,0,100)
-        elif index.data(STATUS_ROLE) == ERROR:
-            color = QColor(235, 10, 10)
-        else:
-            color = QColor(0,0,0)
-
-        painter.setPen(QPen(color))
-        used_rect = painter.drawText(text_rect, Qt.AlignLeft, str(val))
-        painter.restore()
-
-        painter.restore()
-
 class NetworkActivityModel(QAbstractItemModel):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -390,6 +348,20 @@ class NetworkActivityModel(QAbstractItemModel):
             return item.tooltip(index.column())
         elif role == STATUS_ROLE:
             return item.status
+        elif role == Qt.ForegroundRole:
+            if item.status in (PENDING, CANCELED):
+                color = QColor(0, 0, 0, 100)
+            elif item.status == ERROR:
+                color = QColor(235, 10, 10)
+            else:
+                color = QColor(0, 0, 0)
+            return QBrush(color)
+
+        elif role == Qt.FontRole:
+            f = QFont()
+            if item.status == CANCELED:
+                f.setStrikeOut(True)
+            return f
 
     def flags(self, index):
         if not index.isValid():
@@ -444,7 +416,6 @@ class ActivityView(QTreeView):
         self.setModel(self.model)
 
         self.model.rowsInserted.connect(self.rows_inserted)
-        self.setItemDelegate(ItemDelegate(self))
 
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.context_menu)
