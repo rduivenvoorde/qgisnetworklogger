@@ -26,8 +26,8 @@ class QgisNetworkLogger:
         # get the handle of the (singleton?) QgsNetworkAccessManager instance
         self.nam = QgsNetworkAccessManager.instance()
         # TODO put in gui/settings
-        self.show_request_headers = True
-        self.show_response_headers = True
+        self.show_request_headers = False
+        self.show_response_headers = False
 
     def initGui(self):
         # Create action that will start plugin
@@ -78,6 +78,8 @@ class QgisNetworkLogger:
     # request_params = QgsNetworkRequestParameters with QNetworkRequest
     def request_about_to_be_created(self, request_params):
         operation = request_params.operation()
+        initiator = request_params.initiatorClassName()
+        initiator_id = request_params.initiatorRequestId()
         op = "Custom"
         if operation == QNetworkAccessManager.HeadOperation: op = "HEAD"
         elif operation == QNetworkAccessManager.GetOperation: op = "GET"
@@ -91,7 +93,7 @@ class QgisNetworkLogger:
         if self.show_request_headers:
             for header in request_params.request().rawHeaderList():
                 headers+='<br/>'+header.data().decode('utf-8')+' =  '+request_params.request().rawHeader(header).data().decode('utf-8')
-        self.show('Request {} in thread {} {} <a href="{}">{}</a> <span style="color:gray;">{}</span>'.format(request_id, thread_id, op, url, url, headers))
+        self.show('Request {} in thread {} by {} ({}) <br/>{} <a href="{}">{}</a> <span style="color:gray;">{}</span>'.format(request_id, thread_id, initiator, initiator_id, op, url, url, headers))
         if operation == QNetworkAccessManager.PostOperation or operation == QNetworkAccessManager.PutOperation:
             # duh.... most POST data is xml which is NOT viewable in html IF NOT ESCAPED.....
             import html
