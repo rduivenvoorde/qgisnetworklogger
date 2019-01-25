@@ -11,6 +11,7 @@
 
 from qgis.PyQt.QtCore import (
     QAbstractItemModel,
+    QSortFilterProxyModel,
     QModelIndex,
     Qt,
     QUrlQuery
@@ -34,7 +35,10 @@ from qgis.PyQt.QtNetwork import (
     QNetworkRequest,
     QNetworkReply
 )
-from qgis.gui import QgsDockWidget
+from qgis.gui import (
+    QgsDockWidget,
+    QgsFilterLineEdit
+)
 from qgis.core import (
     QgsNetworkAccessManager,
     QgsNetworkReplyContent,
@@ -409,11 +413,33 @@ class NetworkActivityModel(QAbstractItemModel):
             QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].connect(self.request_about_to_be_created)
 
 
+class ActivityProxyModel(QSortFilterProxyModel):
+
+    def __init__(self, source_model, parent = None):
+
+        super().__init__(parent)
+        self.source_model = source_model
+        self.setSourceModel(self.source_model)
+        self.filter_string = ''
+
+    def set_filter_string(self, string):
+        self.filter_string = string
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, sourceRow, sourceParent):
+        item = self.source_model.index(sourceRow,0,sourceParent).internalPointer()
+        if isinstance(item,RequestParentItem):
+            return self.filter_string.lower() in item.url.url().lower()
+        else:
+            return True
+
+
 class ActivityView(QTreeView):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.model = NetworkActivityModel(self)
-        self.setModel(self.model)
+        self.proxy_model = ActivityProxyModel(self.model, self)
+        self.setModel(self.proxy_model)
 
         self.model.rowsInserted.connect(self.rows_inserted)
 
@@ -425,7 +451,8 @@ class ActivityView(QTreeView):
         for r in range(first, last + 1):
             this_index = self.model.index(r, 0, parent)
             if this_index.internalPointer().span():
-                self.setFirstColumnSpanned(r, parent, True)
+                proxy_index = self.proxy_model.mapFromSource(self.model.index(r, 0, parent))
+                self.setFirstColumnSpanned(proxy_index.row(),proxy_index.parent(), True)
             for i in range(self.model.rowCount(this_index)):
                 self.rows_inserted(this_index, i, i)
 
@@ -438,6 +465,9 @@ class ActivityView(QTreeView):
 
     def pause(self, state):
         self.model.pause(state)
+
+    def set_filter_string(self, string):
+        self.proxy_model.set_filter_string(string)
 
     def context_menu(self, point):
         index = self.indexAt(point)
@@ -475,7 +505,13 @@ class NetworkActivityDock(QgsDockWidget):
         self.toolbar.addAction(self.pause_action)
         self.clear_action.triggered.connect(self.view.clear)
         self.pause_action.toggled.connect(self.view.pause)
+
+        self.filter_line_edit = QgsFilterLineEdit()
+        self.filter_line_edit.setShowSearchIcon(True)
+        self.filter_line_edit.setPlaceholderText('Filter requests')
+        self.filter_line_edit.textChanged.connect(self.view.set_filter_string)
         l.addWidget(self.toolbar)
+        l.addWidget(self.filter_line_edit)
         l.addWidget(self.view)
         w = QWidget()
         w.setLayout(l)
