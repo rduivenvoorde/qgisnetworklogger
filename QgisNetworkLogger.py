@@ -3,9 +3,17 @@
 from qgis.PyQt.QtCore import *
 from qgis.PyQt.QtGui import *
 from qgis.PyQt.QtWidgets import *
-from qgis.core import *
-
-from qgis.PyQt.QtNetwork import QNetworkRequest, QNetworkReply
+from qgis.core import (
+    Qgis,
+    QgsMessageLog,
+    QgsNetworkAccessManager,
+    QgsNetworkReplyContent,
+    QgsNetworkRequestParameters
+)
+from qgis.PyQt.QtNetwork import (
+    QNetworkAccessManager,
+    QNetworkRequest
+)
 
 import os
 
@@ -18,8 +26,8 @@ class QgisNetworkLogger:
         # get the handle of the (singleton?) QgsNetworkAccessManager instance
         self.nam = QgsNetworkAccessManager.instance()
         # TODO put in gui/settings
-        self.show_request_headers = False
-        self.show_response_headers = False
+        self.show_request_headers = True
+        self.show_response_headers = True
 
     def initGui(self):
         # Create action that will start plugin
@@ -71,11 +79,11 @@ class QgisNetworkLogger:
     def request_about_to_be_created(self, request_params):
         operation = request_params.operation()
         op = "Custom"
-        if operation == 1: op = "HEAD"
-        elif operation == 2: op = "GET"
-        elif operation == 3: op = "PUT"
-        elif operation == 4: op = "POST"
-        elif operation == 5: op = "DELETE"
+        if operation == QNetworkAccessManager.HeadOperation: op = "HEAD"
+        elif operation == QNetworkAccessManager.GetOperation: op = "GET"
+        elif operation == QNetworkAccessManager.PutOperation: op = "PUT"
+        elif operation == QNetworkAccessManager.PostOperation: op = "POST"
+        elif operation == QNetworkAccessManager.DeleteOperation: op = "DELETE"
         url = request_params.request().url().url()
         thread_id = request_params.originatingThreadId()
         request_id = request_params.requestId()
@@ -84,8 +92,10 @@ class QgisNetworkLogger:
             for header in request_params.request().rawHeaderList():
                 headers+='<br/>'+header.data().decode('utf-8')+' =  '+request_params.request().rawHeader(header).data().decode('utf-8')
         self.show('Request {} in thread {} {} <a href="{}">{}</a> <span style="color:gray;">{}</span>'.format(request_id, thread_id, op, url, url, headers))
-        if op == "POST":
-            self.show('POST data: {}'.format(request_params.content().data().decode('utf-8')))
+        if operation == QNetworkAccessManager.PostOperation or operation == QNetworkAccessManager.PutOperation:
+            # duh.... most POST data is xml which is NOT viewable in html IF NOT ESCAPED.....
+            import html
+            self.show('Request {} POST data: <span style="color:gray;">{}</span>'.format(request_id, html.escape(request_params.content().data().decode('utf-8'))))
 
     # reply is a QgsNetworkReplyContent
     def request_finished(self, reply):
