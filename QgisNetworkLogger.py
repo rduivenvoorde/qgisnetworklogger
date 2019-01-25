@@ -18,16 +18,18 @@ class QgisNetworkLogger:
         # get the handle of the (singleton?) QgsNetworkAccessManager instance
         self.nam = QgsNetworkAccessManager.instance()
         # TODO put in gui/settings
-        self.show_request_headers = True
-        self.show_response_headers = True
+        self.show_request_headers = False
+        self.show_response_headers = False
 
     def initGui(self):
-        # Create action that will start plugina
+        # Create action that will start plugin
         self.action = QAction(QIcon(os.path.dirname(__file__)+'/icons/icon.png'), '&QGIS Network Logger', self.iface.mainWindow())
         # connect the action to the run method
         self.action.triggered.connect(self.show_dialog)
         # Add menu item
         self.iface.addPluginToMenu('QGIS Network Logger', self.action)
+        #import pydevd
+        #pydevd.settrace('localhost', port=5678, stdoutToServer = True, stderrToServer = True)
         self.log_it()
 
     def unload(self):
@@ -82,6 +84,8 @@ class QgisNetworkLogger:
             for header in request_params.request().rawHeaderList():
                 headers+='<br/>'+header.data().decode('utf-8')+' =  '+request_params.request().rawHeader(header).data().decode('utf-8')
         self.show('Request {} in thread {} {} <a href="{}">{}</a> <span style="color:gray;">{}</span>'.format(request_id, thread_id, op, url, url, headers))
+        if op == "POST":
+            self.show('POST data: {}'.format(request_params.content().data().decode('utf-8')))
 
     # reply is a QgsNetworkReplyContent
     def request_finished(self, reply):
