@@ -182,12 +182,16 @@ class RequestHeadersItem(ActivityTreeItem):
 
 
 class PostContentItem(ActivityTreeItem):
+    # request = QgsNetworkRequestParameters
     def __init__(self, request, parent=None):
         super().__init__('Content', parent)
 
         # maybe should be &amp?
-        for p in request.content().data().decode('utf-8').split('&'):
-            PostDetailsItem(p, self)
+        #for p in request.content().data().decode('utf-8').split('&'):
+        #    PostDetailsItem(p, self)
+
+        data = request.content().data().decode('utf-8')
+        PostDetailsItem(data, self)
 
     def text(self, column):
         if column == 0:
@@ -202,13 +206,14 @@ class PostDetailsItem(ActivityTreeItem):
     def __init__(self, part, parent=None):
         super().__init__('', parent)
 
-        self.description, self.value = part.split('=')
+        #self.description, self.value = part.split('=')
+        self.data = part
 
     def text(self, column):
         if column == 0:
-            return self.description
+            return 'Data'
         else:
-            return self.value
+            return self.data
 
 
 class ReplyItem(ActivityTreeItem):
@@ -412,6 +417,9 @@ class ActivityView(QTreeView):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.context_menu)
 
+        # not working
+        self.setWordWrap(True);
+
     def rows_inserted(self, parent, first, last):
         # silly qt API - this shouldn't be so hard!
         for r in range(first, last + 1):
@@ -424,6 +432,11 @@ class ActivityView(QTreeView):
             w = this_index.internalPointer().createWidget()
             if w:
                 self.setIndexWidget(this_index, w)
+
+        # not working
+        # self.resizeColumnToContents(1)
+        # opens ALL lines
+        #self.scrollTo(self.model.index(last, 0, parent))
 
     def clear(self):
         self.model.clear()

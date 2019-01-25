@@ -34,6 +34,8 @@ class QgisNetworkLogger:
         self.show_request_headers = True
         self.show_response_headers = True
         self.dock = None
+        #import pydevd
+        #pydevd.settrace('localhost', port=5678, stdoutToServer=True, stderrToServer=True)
 
     def initGui(self):
         # Create action that will start plugina
