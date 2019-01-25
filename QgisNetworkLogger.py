@@ -43,6 +43,7 @@ class QgisNetworkLogger:
         # Add menu item
         self.iface.addPluginToMenu('QGIS Network Logger', self.action)
         self.dock = NetworkActivityDock()
+        self.dock.setObjectName('NetworkActivityDock')
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock)
         self.log_it()
 
