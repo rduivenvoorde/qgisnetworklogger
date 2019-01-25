@@ -138,6 +138,9 @@ class RequestItem(ActivityTreeItem):
 
         RequestDetailsItem('Operation', op, self)
         RequestDetailsItem('Thread', request.originatingThreadId(), self)
+        RequestDetailsItem('Initiator', request.initiatorClassName() if request.initiatorClassName() else 'unknown', self)
+        if request.initiatorRequestId():
+            RequestDetailsItem('ID', str(request.initiatorRequestId()), self)
         RequestHeadersItem(request, self)
         if op in ('POST', 'PUT'):
             PostContentItem(request,self)
