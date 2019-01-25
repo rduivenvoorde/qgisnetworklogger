@@ -11,15 +11,13 @@
 
 from qgis.PyQt.QtCore import (
     QAbstractItemModel,
+    QSortFilterProxyModel,
     QModelIndex,
-    Qt
+    Qt,
+    QUrlQuery
 )
 from qgis.PyQt.QtWidgets import (
     QTreeView,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
-    QStyle,
-    qApp,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -27,7 +25,8 @@ from qgis.PyQt.QtWidgets import (
     QMenu
 )
 from qgis.PyQt.QtGui import (
-    QPen,
+    QBrush,
+    QFont,
     QColor,
     QDesktopServices
 )
@@ -36,7 +35,10 @@ from qgis.PyQt.QtNetwork import (
     QNetworkRequest,
     QNetworkReply
 )
-from qgis.gui import QgsDockWidget
+from qgis.gui import (
+    QgsDockWidget,
+    QgsFilterLineEdit
+)
 from qgis.core import (
     QgsNetworkAccessManager,
     QgsNetworkReplyContent,
@@ -49,6 +51,7 @@ STATUS_ROLE = Qt.UserRole + 1
 PENDING = 'PENDING'
 COMPLETE = 'COMPLETE'
 ERROR = 'ERROR'
+CANCELED = 'CANCELED'
 
 
 class ActivityTreeItem(object):
@@ -108,7 +111,9 @@ class RequestParentItem(ActivityTreeItem):
         QDesktopServices.openUrl(self.url)
 
     def set_reply(self, reply):
-        if reply.error() != QNetworkReply.NoError:
+        if reply.error() == QNetworkReply.OperationCanceledError:
+            self.status = CANCELED
+        elif reply.error() != QNetworkReply.NoError:
             self.status = ERROR
         else:
             self.status = COMPLETE
@@ -136,8 +141,15 @@ class RequestItem(ActivityTreeItem):
         elif operation == QNetworkAccessManager.DeleteOperation:
             op = "DELETE"
 
+        query = QUrlQuery(self.url)
         RequestDetailsItem('Operation', op, self)
         RequestDetailsItem('Thread', request.originatingThreadId(), self)
+        RequestDetailsItem('Initiator', request.initiatorClassName() if request.initiatorClassName() else 'unknown', self)
+        if request.initiatorRequestId():
+            RequestDetailsItem('ID', str(request.initiatorRequestId()), self)
+        query_items = query.queryItems()
+        if query_items:
+            RequestQueryItems(query_items, self)
         RequestHeadersItem(request, self)
         if op in ('POST', 'PUT'):
             PostContentItem(request,self)
@@ -180,6 +192,21 @@ class RequestHeadersItem(ActivityTreeItem):
     def span(self):
         return True
 
+class RequestQueryItems(ActivityTreeItem):
+    def __init__(self, query_items, parent=None):
+        super().__init__('Query', parent)
+
+        for item in query_items:
+            RequestDetailsItem(item[0], item[1], self)
+
+    def text(self, column):
+        if column == 0:
+            return 'Query'
+        else:
+            return ''
+
+    def span(self):
+        return True
 
 class PostContentItem(ActivityTreeItem):
     # request = QgsNetworkRequestParameters
@@ -265,50 +292,12 @@ class ReplyDetailsItem(ActivityTreeItem):
             return self.value
 
 
-class ItemDelegate(QStyledItemDelegate):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-    def paint(self, painter, option, index):
-        val = index.data(Qt.DisplayRole)
-        if not val:
-            return
-
-        opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-
-        # original command that would draw the whole thing with default style
-        #style.drawControl(QStyle.CE_ItemViewItem, opt, painter)
-
-        style = qApp.style()
-        painter.save()
-        painter.setClipRect(opt.rect)
-
-        # background
-        style.drawPrimitive(QStyle.PE_PanelItemViewItem, opt, painter, None)
-
-        text_margin = style.pixelMetric(QStyle.PM_FocusFrameHMargin, None, None) + 1
-        text_rect = opt.rect.adjusted(text_margin, 0, -text_margin, 0) # remove width padding
-
-        # variable name
-        painter.save()
-        if index.data(STATUS_ROLE) == PENDING:
-            color = QColor(0,0,0,100)
-        elif index.data(STATUS_ROLE) == ERROR:
-            color = QColor(235, 10, 10)
-        else:
-            color = QColor(0,0,0)
-
-        painter.setPen(QPen(color))
-        used_rect = painter.drawText(text_rect, Qt.AlignLeft, str(val))
-        painter.restore()
-
-        painter.restore()
-
 class NetworkActivityModel(QAbstractItemModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.root_item = RootItem()
+
+        self.is_paused = False
 
         nam = QgsNetworkAccessManager.instance()
 
@@ -368,6 +357,20 @@ class NetworkActivityModel(QAbstractItemModel):
             return item.tooltip(index.column())
         elif role == STATUS_ROLE:
             return item.status
+        elif role == Qt.ForegroundRole:
+            if item.status in (PENDING, CANCELED):
+                color = QColor(0, 0, 0, 100)
+            elif item.status == ERROR:
+                color = QColor(235, 10, 10)
+            else:
+                color = QColor(0, 0, 0)
+            return QBrush(color)
+
+        elif role == Qt.FontRole:
+            f = QFont()
+            if item.status == CANCELED:
+                f.setStrikeOut(True)
+            return f
 
     def flags(self, index):
         if not index.isValid():
@@ -404,15 +407,46 @@ class NetworkActivityModel(QAbstractItemModel):
         self.request_indices = {}
         self.endResetModel()
 
+    def pause(self, state):
+        if state == self.is_paused:
+            return
+
+        self.is_paused = state
+        if self.is_paused:
+            QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].disconnect(self.request_about_to_be_created)
+        else:
+            QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].connect(self.request_about_to_be_created)
+
+
+class ActivityProxyModel(QSortFilterProxyModel):
+
+    def __init__(self, source_model, parent = None):
+
+        super().__init__(parent)
+        self.source_model = source_model
+        self.setSourceModel(self.source_model)
+        self.filter_string = ''
+
+    def set_filter_string(self, string):
+        self.filter_string = string
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, sourceRow, sourceParent):
+        item = self.source_model.index(sourceRow,0,sourceParent).internalPointer()
+        if isinstance(item,RequestParentItem):
+            return self.filter_string.lower() in item.url.url().lower()
+        else:
+            return True
+
 
 class ActivityView(QTreeView):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.model = NetworkActivityModel(self)
-        self.setModel(self.model)
+        self.proxy_model = ActivityProxyModel(self.model, self)
+        self.setModel(self.proxy_model)
 
         self.model.rowsInserted.connect(self.rows_inserted)
-        self.setItemDelegate(ItemDelegate(self))
 
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.context_menu)
@@ -425,7 +459,8 @@ class ActivityView(QTreeView):
         for r in range(first, last + 1):
             this_index = self.model.index(r, 0, parent)
             if this_index.internalPointer().span():
-                self.setFirstColumnSpanned(r, parent, True)
+                proxy_index = self.proxy_model.mapFromSource(self.model.index(r, 0, parent))
+                self.setFirstColumnSpanned(proxy_index.row(),proxy_index.parent(), True)
             for i in range(self.model.rowCount(this_index)):
                 self.rows_inserted(this_index, i, i)
 
@@ -440,6 +475,12 @@ class ActivityView(QTreeView):
 
     def clear(self):
         self.model.clear()
+
+    def pause(self, state):
+        self.model.pause(state)
+
+    def set_filter_string(self, string):
+        self.proxy_model.set_filter_string(string)
 
     def context_menu(self, point):
         index = self.indexAt(point)
@@ -468,12 +509,22 @@ class NetworkActivityDock(QgsDockWidget):
         l.setContentsMargins(0,0,0,0)
 
         self.clear_action = QAction('Clear')
+        self.pause_action = QAction('Pause')
+        self.pause_action.setCheckable(True)
 
         self.toolbar = QToolBar()
         self.toolbar.setIconSize(iface.iconSize(True))
         self.toolbar.addAction(self.clear_action)
+        self.toolbar.addAction(self.pause_action)
         self.clear_action.triggered.connect(self.view.clear)
+        self.pause_action.toggled.connect(self.view.pause)
+
+        self.filter_line_edit = QgsFilterLineEdit()
+        self.filter_line_edit.setShowSearchIcon(True)
+        self.filter_line_edit.setPlaceholderText('Filter requests')
+        self.filter_line_edit.textChanged.connect(self.view.set_filter_string)
         l.addWidget(self.toolbar)
+        l.addWidget(self.filter_line_edit)
         l.addWidget(self.view)
         w = QWidget()
         w.setLayout(l)
