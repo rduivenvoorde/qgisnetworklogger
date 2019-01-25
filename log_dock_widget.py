@@ -12,7 +12,8 @@
 from qgis.PyQt.QtCore import (
     QAbstractItemModel,
     QModelIndex,
-    Qt
+    Qt,
+    QUrlQuery
 )
 from qgis.PyQt.QtWidgets import (
     QTreeView,
@@ -136,11 +137,17 @@ class RequestItem(ActivityTreeItem):
         elif operation == QNetworkAccessManager.DeleteOperation:
             op = "DELETE"
 
+        query = QUrlQuery(self.url)
+
+
         RequestDetailsItem('Operation', op, self)
         RequestDetailsItem('Thread', request.originatingThreadId(), self)
         RequestDetailsItem('Initiator', request.initiatorClassName() if request.initiatorClassName() else 'unknown', self)
         if request.initiatorRequestId():
             RequestDetailsItem('ID', str(request.initiatorRequestId()), self)
+        query_items = query.queryItems()
+        if query_items:
+            RequestQueryItems(query_items, self)
         RequestHeadersItem(request, self)
         if op in ('POST', 'PUT'):
             PostContentItem(request,self)
@@ -183,6 +190,21 @@ class RequestHeadersItem(ActivityTreeItem):
     def span(self):
         return True
 
+class RequestQueryItems(ActivityTreeItem):
+    def __init__(self, query_items, parent=None):
+        super().__init__('Query', parent)
+
+        for item in query_items:
+            RequestDetailsItem(item[0], item[1], self)
+
+    def text(self, column):
+        if column == 0:
+            return 'Query'
+        else:
+            return ''
+
+    def span(self):
+        return True
 
 class PostContentItem(ActivityTreeItem):
     def __init__(self, request, parent=None):
