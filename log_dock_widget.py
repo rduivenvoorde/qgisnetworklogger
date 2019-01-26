@@ -17,6 +17,7 @@ from qgis.PyQt.QtCore import (
     QUrlQuery
 )
 from qgis.PyQt.QtWidgets import (
+    QApplication,
     QTreeView,
     QToolBar,
     QVBoxLayout,
@@ -112,12 +113,22 @@ class RequestParentItem(ActivityTreeItem):
         super().__init__('', parent)
         self.url = request.request().url()
         self.operation = self.operation2string(request.operation())
+        self.headers = []
+        self.data = request.content().data().decode('utf-8')
+        for header in request.request().rawHeaderList():
+            self.headers.append(
+                (header.data().decode('utf-8'),
+                 request.request().rawHeader(header).data().decode('utf-8')))
+
         RequestItem(request, self)
 
         self.status = PENDING
 
         self.open_url_action = QAction('Open URL')
         self.open_url_action.triggered.connect(self.open_url)
+
+        self.copy_as_curl_action = QAction('Copy as cURL')
+        self.copy_as_curl_action.triggered.connect(self.copy_as_curl)
 
     def span(self):
         return True
@@ -130,6 +141,19 @@ class RequestParentItem(ActivityTreeItem):
     def open_url(self):
         QDesktopServices.openUrl(self.url)
 
+    def copy_as_curl(self):
+        """Get url + headers + data and create a full curl command
+        Copy that to clipboard
+        """
+        curl_headers = ''
+        for header,value in self.headers:
+            curl_headers += "-H '{}: {}' ".format(header, value)
+        curl_data = ''
+        if self.operation in ('POST', 'PUT'):
+            curl_data = "--data '{}' ".format(self.data)
+        curl_cmd =  "curl '{}' {} {}--compressed".format(self.url.url(), curl_headers, curl_data)
+        QApplication.clipboard().setText(curl_cmd)
+
     def set_reply(self, reply):
         if reply.error() == QNetworkReply.OperationCanceledError:
             self.status = CANCELED
@@ -140,7 +164,7 @@ class RequestParentItem(ActivityTreeItem):
         ReplyItem(reply, self)
 
     def actions(self):
-        return [self.open_url_action]
+        return [self.open_url_action, self.copy_as_curl_action]
 
 class RequestItem(ActivityTreeItem):
     def __init__(self, request, parent=None):
@@ -159,7 +183,7 @@ class RequestItem(ActivityTreeItem):
             RequestQueryItems(query_items, self)
         RequestHeadersItem(request, self)
         if self.operation in ('POST', 'PUT'):
-            PostContentItem(request,self)
+            PostContentItem(request, self)
 
     def span(self):
         return True
