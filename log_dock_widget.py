@@ -468,10 +468,7 @@ class ActivityView(QTreeView):
             if w:
                 self.setIndexWidget(this_index, w)
 
-        # not working
-        # self.resizeColumnToContents(1)
-        # opens ALL lines
-        #self.scrollTo(self.model.index(last, 0, parent))
+        self.scrollToBottom()
 
     def clear(self):
         self.model.clear()
