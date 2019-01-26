@@ -445,6 +445,7 @@ class ActivityView(QTreeView):
         self.model = NetworkActivityModel(self)
         self.proxy_model = ActivityProxyModel(self.model, self)
         self.setModel(self.proxy_model)
+        self.expanded.connect(self.item_expanded)
 
         self.model.rowsInserted.connect(self.rows_inserted)
 
@@ -453,6 +454,36 @@ class ActivityView(QTreeView):
 
         # not working
         self.setWordWrap(True);
+
+    def item_expanded(self, index):
+        """Slot to be called after expanding an ActivityView item.
+        If the item is a Request item, open all children (show ALL info of it)
+        We want to scroll to last request
+
+        :param index:
+        """
+        # only expand all children on Request Nodes (which NOT have a valid parent)
+        if not index.parent().isValid():
+            self.expand_children(index)
+            # upon expanding a request row, resize first column to fully readable size:
+            self.setColumnWidth(0, self.sizeHintForColumn(0))
+        # make ALL request information visible by scrolling view to it
+        self.scrollTo(index)
+
+    def expand_children(self, index):
+        """Expand all children of this item defined by index
+
+        :param index: from where to expand all children
+        :type index: QModelIndex
+        """
+        if not index.isValid():
+            return
+        count = index.model().rowCount(index)
+        for i in range(0, count):
+            child_index = index.child(i, 0)
+            self.expand_children(child_index)
+        if not self.isExpanded(index):
+            self.expand(index)
 
     def rows_inserted(self, parent, first, last):
         # silly qt API - this shouldn't be so hard!
@@ -467,7 +498,7 @@ class ActivityView(QTreeView):
             w = this_index.internalPointer().createWidget()
             if w:
                 self.setIndexWidget(this_index, w)
-
+        # always make the last line visible
         self.scrollToBottom()
 
     def clear(self):
