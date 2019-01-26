@@ -81,6 +81,25 @@ class ActivityTreeItem(object):
     def actions(self):
         return []
 
+    def operation2string(self, operation):
+        """ Create http-operation String from Operation
+
+        :param operation: QNetworkAccessManager.Operation
+        :return: string
+        """
+        op = "Custom"
+        if operation == QNetworkAccessManager.HeadOperation:
+            op = "HEAD"
+        elif operation == QNetworkAccessManager.GetOperation:
+            op = "GET"
+        elif operation == QNetworkAccessManager.PutOperation:
+            op = "PUT"
+        elif operation == QNetworkAccessManager.PostOperation:
+            op = "POST"
+        elif operation == QNetworkAccessManager.DeleteOperation:
+            op = "DELETE"
+        return op
+
 
 class RootItem(ActivityTreeItem):
     def __init__(self, parent=None):
@@ -92,6 +111,7 @@ class RequestParentItem(ActivityTreeItem):
     def __init__(self, request, parent=None):
         super().__init__('', parent)
         self.url = request.request().url()
+        self.operation = self.operation2string(request.operation())
         RequestItem(request, self)
 
         self.status = PENDING
@@ -104,7 +124,7 @@ class RequestParentItem(ActivityTreeItem):
 
     def text(self, column):
         if column == 0:
-            return self.url.url()
+            return '{} {}'.format(self.operation, self.url.url())
         return ''
 
     def open_url(self):
@@ -127,22 +147,9 @@ class RequestItem(ActivityTreeItem):
         super().__init__('', parent)
 
         self.url = request.request().url()
-
-        operation = request.operation()
-        op = "Custom"
-        if operation == QNetworkAccessManager.HeadOperation:
-            op = "HEAD"
-        elif operation == QNetworkAccessManager.GetOperation:
-            op = "GET"
-        elif operation == QNetworkAccessManager.PutOperation:
-            op = "PUT"
-        elif operation == QNetworkAccessManager.PostOperation:
-            op = "POST"
-        elif operation == QNetworkAccessManager.DeleteOperation:
-            op = "DELETE"
-
+        self.operation = self.operation2string(request.operation())
         query = QUrlQuery(self.url)
-        RequestDetailsItem('Operation', op, self)
+        RequestDetailsItem('Operation', self.operation, self)
         RequestDetailsItem('Thread', request.originatingThreadId(), self)
         RequestDetailsItem('Initiator', request.initiatorClassName() if request.initiatorClassName() else 'unknown', self)
         if request.initiatorRequestId():
@@ -151,7 +158,7 @@ class RequestItem(ActivityTreeItem):
         if query_items:
             RequestQueryItems(query_items, self)
         RequestHeadersItem(request, self)
-        if op in ('POST', 'PUT'):
+        if self.operation in ('POST', 'PUT'):
             PostContentItem(request,self)
 
     def span(self):
