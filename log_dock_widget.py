@@ -483,7 +483,8 @@ class ActivityView(QTreeView):
         self.proxy_model.set_filter_string(string)
 
     def context_menu(self, point):
-        index = self.indexAt(point)
+        proxy_model_index = self.indexAt(point)
+        index = self.proxy_model.mapToSource(proxy_model_index)
         if index.isValid():
             menu = QMenu()
             populated = False
