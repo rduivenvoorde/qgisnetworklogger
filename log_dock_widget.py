@@ -118,6 +118,7 @@ class RequestParentItem(ActivityTreeItem):
         self.time = time.time()
         self.http_status = -1
         self.content_type = ''
+        self.progress = None
         self.headers = []
         self.replies = 0
         self.data = request.content().data().decode('utf-8')
@@ -167,18 +168,29 @@ class RequestParentItem(ActivityTreeItem):
             self.status = ERROR
         else:
             self.status = COMPLETE
-        self.replies+=1
         self.time = int((time.time()-self.time) * 1000)
         self.http_status = reply.attribute(QNetworkRequest.HttpStatusCodeAttribute)
         self.content_type = reply.rawHeader(b'Content-Type').data().decode('utf-8')
         ReplyItem(reply, self)
 
+    def set_progress(self, received, total):
+        self.replies+=1  # ?? is the progress signal the same as the chunks received or read?
+        self.progress = (received, total)
+
     def actions(self):
         return [self.open_url_action, self.copy_as_curl_action]
 
     def tooltip(self, column):
-        return "{} - Status: {} - {} - {} msec - {} chunks"\
-            .format(self.status, self.http_status, self.content_type, self.time, self. replies)
+        bytes = 'unknown'
+        if self.progress:
+            rec,tot = self.progress
+            if rec > 0 and rec < tot:
+                bytes = '{}/{}'.format(rec, tot)
+            elif rec > 0 and rec == tot:
+                bytes = '{}'.format(tot)
+        # COMPLETE, Status: 200 - text/xml; charset=utf-8 - 2334 bytes - 657 milliseconds
+        return "{} - Status: {} - {} - {} bytes - {} msec - {} chunks?"\
+            .format(self.status, self.http_status, self.content_type, bytes, self.time, self. replies)
 
 class RequestItem(ActivityTreeItem):
     def __init__(self, request, parent=None):
@@ -349,6 +361,7 @@ class NetworkActivityModel(QAbstractItemModel):
         nam.requestAboutToBeCreated[QgsNetworkRequestParameters].connect(self.request_about_to_be_created)
         nam.finished[QgsNetworkReplyContent].connect(self.request_finished)
         nam.requestTimedOut[QgsNetworkRequestParameters].connect(self.request_timed_out)
+        nam.downloadProgress.connect(self.download_progress)
 
         self.requests_items = {}
         self.request_indices = {}
@@ -380,6 +393,14 @@ class NetworkActivityModel(QAbstractItemModel):
         # request_id = request_params.requestId()
         ##self.show('Timeout or abort: <a href="{}">{}</a>'.format(url, url))
         # self.show('Timeout or abort {} in thread {}'.format(request_id, thread_id))
+
+    def download_progress(self, request_id, received, total):
+        #print('{} {} {}'.format(request_id, received, total))
+        request_index = self.request_indices[request_id]
+        request_item = self.requests_items[request_id]
+        request_item.set_progress(received, total)
+        # is this nessecary?
+        self.dataChanged.emit(request_index, request_index)
 
     def columnCount(self, parent):
         return 2
