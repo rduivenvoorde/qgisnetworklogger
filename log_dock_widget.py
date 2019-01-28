@@ -174,7 +174,7 @@ class RequestParentItem(ActivityTreeItem):
         ReplyItem(reply, self)
 
     def set_progress(self, received, total):
-        self.replies+=1  # ?? is the progress signal the same as the chunks received or read?
+        self.replies+=1
         self.progress = (received, total)
 
     def actions(self):
@@ -188,9 +188,10 @@ class RequestParentItem(ActivityTreeItem):
                 bytes = '{}/{}'.format(rec, tot)
             elif rec > 0 and rec == tot:
                 bytes = '{}'.format(tot)
+        # ?? adding <br/> instead of \n after (very long) url seems to break url up
         # COMPLETE, Status: 200 - text/xml; charset=utf-8 - 2334 bytes - 657 milliseconds
-        return "{} - Status: {} - {} - {} bytes - {} msec - {} chunks?"\
-            .format(self.status, self.http_status, self.content_type, bytes, self.time, self. replies)
+        return "{}<br/>{} - Status: {} - {} - {} bytes - {} msec - {} replies"\
+            .format(self.url.url(), self.status, self.http_status, self.content_type, bytes, self.time, self. replies)
 
 class RequestItem(ActivityTreeItem):
     def __init__(self, request, parent=None):
@@ -395,12 +396,10 @@ class NetworkActivityModel(QAbstractItemModel):
         # self.show('Timeout or abort {} in thread {}'.format(request_id, thread_id))
 
     def download_progress(self, request_id, received, total):
-        #print('{} {} {}'.format(request_id, received, total))
         request_index = self.request_indices[request_id]
         request_item = self.requests_items[request_id]
         request_item.set_progress(received, total)
-        # is this nessecary?
-        self.dataChanged.emit(request_index, request_index)
+        self.dataChanged.emit(request_index, request_index, [Qt.ToolTipRole])
 
     def columnCount(self, parent):
         return 2
