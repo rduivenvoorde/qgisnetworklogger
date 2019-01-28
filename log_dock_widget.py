@@ -54,6 +54,7 @@ STATUS_ROLE = Qt.UserRole + 1
 PENDING = 'PENDING'
 COMPLETE = 'COMPLETE'
 ERROR = 'ERROR'
+TIMEOUT = 'TIMEOUT'
 CANCELED = 'CANCELED'
 
 
@@ -130,6 +131,7 @@ class RequestParentItem(ActivityTreeItem):
         RequestItem(request, self)
 
         self.status = PENDING
+        self.ssl_errors = False
 
         self.open_url_action = QAction('Open URL')
         self.open_url_action.triggered.connect(self.open_url)
@@ -173,9 +175,16 @@ class RequestParentItem(ActivityTreeItem):
         self.content_type = reply.rawHeader(b'Content-Type').data().decode('utf-8')
         ReplyItem(reply, self)
 
+    def set_timed_out(self):
+        self.status = TIMEOUT
+
     def set_progress(self, received, total):
         self.replies+=1
         self.progress = (received, total)
+
+    def set_ssl_errors(self, errors):
+        self.ssl_errors = errors
+        SslErrorsItem(errors, self)
 
     def actions(self):
         return [self.open_url_action, self.copy_as_curl_action]
@@ -349,6 +358,22 @@ class ReplyDetailsItem(ActivityTreeItem):
         else:
             return self.value
 
+class SslErrorsItem(ActivityTreeItem):
+    def __init__(self, errors, parent=None):
+        super().__init__('', parent)
+        print('ssl error')
+        for error in errors:
+            ReplyDetailsItem('Error',
+                             error.errorString(), self)
+
+    def text(self, column):
+        if column == 0:
+            return 'SSL errors'
+        else:
+            return ''
+
+    def span(self):
+        return True
 
 class NetworkActivityModel(QAbstractItemModel):
     def __init__(self, parent=None):
@@ -363,6 +388,7 @@ class NetworkActivityModel(QAbstractItemModel):
         nam.finished[QgsNetworkReplyContent].connect(self.request_finished)
         nam.requestTimedOut[QgsNetworkRequestParameters].connect(self.request_timed_out)
         nam.downloadProgress.connect(self.download_progress)
+        nam.requestEncounteredSslErrors.connect(self.ssl_errors)
 
         self.requests_items = {}
         self.request_indices = {}
@@ -386,14 +412,27 @@ class NetworkActivityModel(QAbstractItemModel):
 
         self.dataChanged.emit(request_index,request_index)
 
-    def request_timed_out(self, request_params):
-        # TODO
-        pass
-        # url = request_params.request().url().url()
-        # thread_id = request_params.originatingThreadId()
-        # request_id = request_params.requestId()
-        ##self.show('Timeout or abort: <a href="{}">{}</a>'.format(url, url))
-        # self.show('Timeout or abort {} in thread {}'.format(request_id, thread_id))
+    def request_timed_out(self, reply):
+        if not reply.requestId() in self.requests_items:
+            return
+
+        request_index = self.request_indices[reply.requestId()]
+        request_item = self.requests_items[reply.requestId()]
+        request_item.set_timed_out()
+        self.dataChanged.emit(request_index,request_index)
+
+    def ssl_errors(self, requestId, errors):
+        if not requestId in self.requests_items:
+            return
+
+        request_index = self.request_indices[requestId]
+        request_item = self.requests_items[requestId]
+
+        self.beginInsertRows(request_index, len(request_item.children), len(request_item.children))
+        request_item.set_ssl_errors(errors)
+        self.endInsertRows()
+
+        self.dataChanged.emit(request_index,request_index)
 
     def download_progress(self, request_id, received, total):
         request_index = self.request_indices[request_id]
@@ -423,9 +462,14 @@ class NetworkActivityModel(QAbstractItemModel):
         elif role == STATUS_ROLE:
             return item.status
         elif role == Qt.ForegroundRole:
-            if item.status in (PENDING, CANCELED):
+            if isinstance(item, RequestParentItem) and item.ssl_errors or isinstance(item, SslErrorsItem)\
+                    or isinstance(index.parent().internalPointer(), SslErrorsItem):
+                color = QColor(180, 65, 210)
+            elif item.status in (PENDING, CANCELED):
                 color = QColor(0, 0, 0, 100)
             elif item.status == ERROR:
+                color = QColor(235, 10, 10)
+            elif item.status == TIMEOUT:
                 color = QColor(235, 10, 10)
             else:
                 color = QColor(0, 0, 0)
