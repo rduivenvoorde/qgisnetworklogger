@@ -21,10 +21,14 @@ from qgis.PyQt.QtCore import (
     QCoreApplication,
     Qt
 )
-from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtGui import (
+    QIcon,
+    QKeySequence
+)
 from qgis.PyQt.QtWidgets import (
     QAction,
-    QMessageBox
+    QMessageBox,
+    QShortcut
 )
 from qgis.PyQt.QtNetwork import QNetworkRequest, QNetworkReply
 
@@ -54,23 +58,18 @@ class QgisNetworkLogger:
         self.action.triggered.connect(self.show_dialog)
         # Add menu item
         self.iface.addPluginToMenu('QGIS Network Logger', self.action)
+
         self.dock = NetworkActivityDock()
         self.dock.setObjectName('NetworkActivityDock')
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock)
-        self.log_it()
+
+        self.show_dock_shortcut = QShortcut(QKeySequence("F12"), self.iface.mainWindow())
+        self.show_dock_shortcut.activated.connect(self.dock.toggleUserVisible)
 
     def unload(self):
         # Remove the plugin menu item
         self.iface.removePluginMenu('QGIS Network Logger',self.action)
-
-        try:
-            self.nam.requestTimedOut[QgsNetworkRequestParameters].disconnect(self.request_timed_out)
-        except:
-            self.show("Unloading plugin, disconnecting 'requestTimedOut'-signal failed, probably not connected.")
         self.iface.removeDockWidget(self.dock)
-
-    def log_it(self):
-        self.nam.requestTimedOut[QgsNetworkRequestParameters].connect(self.request_timed_out)
 
     def show_dialog(self):
         QMessageBox.information(
@@ -85,10 +84,3 @@ class QgisNetworkLogger:
     def show(self, msg):
         QgsMessageLog.logMessage(msg, "QGIS Network Logger...", Qgis.Info)
 
-    # request_params = QgsNetworkRequestParameters
-    def request_timed_out(self, request_params):
-        url = request_params.request().url().url()
-        thread_id = request_params.originatingThreadId()
-        request_id = request_params.requestId()
-        #self.show('Timeout or abort: <a href="{}">{}</a>'.format(url, url))
-        self.show('Timeout or abort {} in thread {}'.format(request_id, thread_id))
