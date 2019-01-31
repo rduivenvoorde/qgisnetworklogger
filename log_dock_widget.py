@@ -214,12 +214,28 @@ class RequestItem(ActivityTreeItem):
         RequestDetailsItem('Initiator', request.initiatorClassName() if request.initiatorClassName() else 'unknown', self)
         if request.initiatorRequestId():
             RequestDetailsItem('ID', str(request.initiatorRequestId()), self)
+
+        RequestDetailsItem('Cache (control)', self.cache_control_to_string(request.request().attribute(QNetworkRequest.CacheLoadControlAttribute)), self)
+        RequestDetailsItem('Cache (save)', 'Can store result in cache' if request.request().attribute(QNetworkRequest.CacheSaveControlAttribute) else 'Result cannot be stored in cache', self)
+
         query_items = query.queryItems()
         if query_items:
             RequestQueryItems(query_items, self)
         RequestHeadersItem(request, self)
         if self.operation in ('POST', 'PUT'):
             PostContentItem(request, self)
+
+    @staticmethod
+    def cache_control_to_string(cache_control_attribute):
+        if cache_control_attribute == QNetworkRequest.AlwaysNetwork:
+            return 'Always load from network, do not check cache'
+        elif cache_control_attribute == QNetworkRequest.PreferNetwork:
+            return 'Load from the network if the cached entry is older than the network entry'
+        elif cache_control_attribute == QNetworkRequest.PreferCache:
+            return 'Load from cache if available, otherwise load from network'
+        elif cache_control_attribute == QNetworkRequest.AlwaysCache:
+            return 'Only load from cache, error if no cached entry available'
+        return None
 
     def span(self):
         return True
@@ -318,6 +334,8 @@ class ReplyItem(ActivityTreeItem):
             ReplyDetailsItem('Error Code', reply.error(), self)
             ReplyDetailsItem('Error', reply.errorString(), self)
 
+        RequestDetailsItem('Cache (result)', 'Used entry from cache' if reply.attribute(QNetworkRequest.SourceIsFromCacheAttribute) else 'Read from network', self)
+
         ReplyHeadersItem(reply, self)
 
     def span(self):
@@ -361,7 +379,6 @@ class ReplyDetailsItem(ActivityTreeItem):
 class SslErrorsItem(ActivityTreeItem):
     def __init__(self, errors, parent=None):
         super().__init__('', parent)
-        print('ssl error')
         for error in errors:
             ReplyDetailsItem('Error',
                              error.errorString(), self)
@@ -374,6 +391,7 @@ class SslErrorsItem(ActivityTreeItem):
 
     def span(self):
         return True
+
 
 class NetworkActivityModel(QAbstractItemModel):
     def __init__(self, parent=None):
