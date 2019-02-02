@@ -553,14 +553,29 @@ class ActivityProxyModel(QSortFilterProxyModel):
         self.source_model = source_model
         self.setSourceModel(self.source_model)
         self.filter_string = ''
+        self.show_successful = True
+        self.show_timeouts = True
 
     def set_filter_string(self, string):
         self.filter_string = string
         self.invalidateFilter()
 
+    def set_show_successful(self, show):
+        self.show_successful = show
+        self.invalidateFilter()
+
+    def set_show_timeouts(self, show):
+        self.show_timeouts = show
+        self.invalidateFilter()
+
     def filterAcceptsRow(self, sourceRow, sourceParent):
         item = self.source_model.index(sourceRow,0,sourceParent).internalPointer()
         if isinstance(item,RequestParentItem):
+            if item.status in (COMPLETE, CANCELED) and not self.show_successful:
+                return False
+            elif item.status == TIMEOUT and not self.show_timeouts:
+                return False
+
             return self.filter_string.lower() in item.url.url().lower()
         else:
             return True
@@ -637,6 +652,12 @@ class ActivityView(QTreeView):
     def set_filter_string(self, string):
         self.proxy_model.set_filter_string(string)
 
+    def show_successful(self, show):
+        self.proxy_model.set_show_successful(show)
+
+    def show_timeouts(self, show):
+        self.proxy_model.set_show_timeouts(show)
+
     def context_menu(self, point):
         proxy_model_index = self.indexAt(point)
         index = self.proxy_model.mapToSource(proxy_model_index)
@@ -674,6 +695,18 @@ class NetworkActivityDock(QgsDockWidget):
         self.toolbar.addAction(self.pause_action)
         self.clear_action.triggered.connect(self.view.clear)
         self.pause_action.toggled.connect(self.view.pause)
+
+        self.show_success_action = QAction('Show successful requests')
+        self.show_success_action.setCheckable(True)
+        self.show_success_action.setChecked(True)
+        self.show_success_action.toggled.connect(self.view.show_successful)
+        self.show_timeouts_action = QAction('Show timeouts')
+        self.show_timeouts_action.setCheckable(True)
+        self.show_timeouts_action.setChecked(True)
+        self.show_timeouts_action.toggled.connect(self.view.show_timeouts)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.show_success_action)
+        self.toolbar.addAction(self.show_timeouts_action)
 
         self.filter_line_edit = QgsFilterLineEdit()
         self.filter_line_edit.setShowSearchIcon(True)
