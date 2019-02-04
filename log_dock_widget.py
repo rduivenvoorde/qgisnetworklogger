@@ -9,17 +9,11 @@
 # (at your option) any later version.
 # ---------------------------------------------------------------------
 
-import time
-
 from qgis.PyQt.QtCore import (
-    QAbstractItemModel,
-    QSortFilterProxyModel,
     QModelIndex,
-    Qt,
-    QUrlQuery
+    Qt
 )
 from qgis.PyQt.QtWidgets import (
-    QApplication,
     QTreeView,
     QToolBar,
     QVBoxLayout,
@@ -27,27 +21,13 @@ from qgis.PyQt.QtWidgets import (
     QAction,
     QMenu
 )
-from qgis.PyQt.QtGui import (
-    QBrush,
-    QFont,
-    QColor,
-    QDesktopServices
-)
-from qgis.PyQt.QtNetwork import (
-    QNetworkAccessManager,
-    QNetworkRequest,
-    QNetworkReply
-)
 from qgis.gui import (
     QgsDockWidget,
     QgsFilterLineEdit
 )
-from qgis.core import (
-    QgsNetworkAccessManager,
-    QgsNetworkReplyContent,
-    QgsNetworkRequestParameters
-)
+
 from qgis.utils import iface
+from .activity_logger import ActivityProxyModel
 
 STATUS_ROLE = Qt.UserRole + 1
 
@@ -58,533 +38,10 @@ TIMEOUT = 'TIMEOUT'
 CANCELED = 'CANCELED'
 
 
-class ActivityTreeItem(object):
-
-    def __init__(self, name, parent=None):
-        self.name = name
-        self.populated_children = False
-
-        self.parent = parent
-        self.children = []
-        self.status = COMPLETE
-        if parent:
-            parent.children.append(self)
-
-    def span(self):
-        return False
-
-    def text(self, column):
-        return ''
-
-    def tooltip(self, column):
-        return self.text(column)
-
-    def createWidget(self):
-        return None
-
-    def actions(self):
-        return []
-
-    def operation2string(self, operation):
-        """ Create http-operation String from Operation
-
-        :param operation: QNetworkAccessManager.Operation
-        :return: string
-        """
-        op = "Custom"
-        if operation == QNetworkAccessManager.HeadOperation:
-            op = "HEAD"
-        elif operation == QNetworkAccessManager.GetOperation:
-            op = "GET"
-        elif operation == QNetworkAccessManager.PutOperation:
-            op = "PUT"
-        elif operation == QNetworkAccessManager.PostOperation:
-            op = "POST"
-        elif operation == QNetworkAccessManager.DeleteOperation:
-            op = "DELETE"
-        return op
-
-
-class RootItem(ActivityTreeItem):
-    def __init__(self, parent=None):
-        super().__init__('', parent)
-
-
-class RequestParentItem(ActivityTreeItem):
-
-    def __init__(self, request, parent=None):
-        super().__init__('', parent)
-        self.url = request.request().url()
-        self.operation = self.operation2string(request.operation())
-        self.time = time.time()
-        self.http_status = -1
-        self.content_type = ''
-        self.progress = None
-        self.headers = []
-        self.replies = 0
-        self.data = request.content().data().decode('utf-8')
-        for header in request.request().rawHeaderList():
-            self.headers.append(
-                (header.data().decode('utf-8'),
-                 request.request().rawHeader(header).data().decode('utf-8')))
-
-        RequestItem(request, self)
-
-        self.status = PENDING
-        self.ssl_errors = False
-
-        self.open_url_action = QAction('Open URL')
-        self.open_url_action.triggered.connect(self.open_url)
-
-        self.copy_as_curl_action = QAction('Copy as cURL')
-        self.copy_as_curl_action.triggered.connect(self.copy_as_curl)
-
-    def span(self):
-        return True
-
-    def text(self, column):
-        if column == 0:
-            return '{} {}'.format(self.operation, self.url.url())
-        return ''
-
-    def open_url(self):
-        QDesktopServices.openUrl(self.url)
-
-    def copy_as_curl(self):
-        """Get url + headers + data and create a full curl command
-        Copy that to clipboard
-        """
-        curl_headers = ''
-        for header,value in self.headers:
-            curl_headers += "-H '{}: {}' ".format(header, value)
-        curl_data = ''
-        if self.operation in ('POST', 'PUT'):
-            curl_data = "--data '{}' ".format(self.data)
-        curl_cmd =  "curl '{}' {} {}--compressed".format(self.url.url(), curl_headers, curl_data)
-        QApplication.clipboard().setText(curl_cmd)
-
-    def set_reply(self, reply):
-        if reply.error() == QNetworkReply.OperationCanceledError:
-            self.status = CANCELED
-        elif reply.error() != QNetworkReply.NoError:
-            self.status = ERROR
-        else:
-            self.status = COMPLETE
-        self.time = int((time.time()-self.time) * 1000)
-        self.http_status = reply.attribute(QNetworkRequest.HttpStatusCodeAttribute)
-        self.content_type = reply.rawHeader(b'Content-Type').data().decode('utf-8')
-        ReplyItem(reply, self)
-
-    def set_timed_out(self):
-        self.status = TIMEOUT
-
-    def set_progress(self, received, total):
-        self.replies+=1
-        self.progress = (received, total)
-
-    def set_ssl_errors(self, errors):
-        self.ssl_errors = errors
-        SslErrorsItem(errors, self)
-
-    def actions(self):
-        return [self.open_url_action, self.copy_as_curl_action]
-
-    def tooltip(self, column):
-        bytes = 'unknown'
-        if self.progress:
-            rec,tot = self.progress
-            if rec > 0 and rec < tot:
-                bytes = '{}/{}'.format(rec, tot)
-            elif rec > 0 and rec == tot:
-                bytes = '{}'.format(tot)
-        # ?? adding <br/> instead of \n after (very long) url seems to break url up
-        # COMPLETE, Status: 200 - text/xml; charset=utf-8 - 2334 bytes - 657 milliseconds
-        return "{}<br/>{} - Status: {} - {} - {} bytes - {} msec - {} replies"\
-            .format(self.url.url(), self.status, self.http_status, self.content_type, bytes, self.time, self. replies)
-
-class RequestItem(ActivityTreeItem):
-    def __init__(self, request, parent=None):
-        super().__init__('', parent)
-
-        self.url = request.request().url()
-        self.operation = self.operation2string(request.operation())
-        query = QUrlQuery(self.url)
-        RequestDetailsItem('Operation', self.operation, self)
-        RequestDetailsItem('Thread', request.originatingThreadId(), self)
-        RequestDetailsItem('Initiator', request.initiatorClassName() if request.initiatorClassName() else 'unknown', self)
-        if request.initiatorRequestId():
-            RequestDetailsItem('ID', str(request.initiatorRequestId()), self)
-
-        RequestDetailsItem('Cache (control)', self.cache_control_to_string(request.request().attribute(QNetworkRequest.CacheLoadControlAttribute)), self)
-        RequestDetailsItem('Cache (save)', 'Can store result in cache' if request.request().attribute(QNetworkRequest.CacheSaveControlAttribute) else 'Result cannot be stored in cache', self)
-
-        query_items = query.queryItems()
-        if query_items:
-            RequestQueryItems(query_items, self)
-        RequestHeadersItem(request, self)
-        if self.operation in ('POST', 'PUT'):
-            PostContentItem(request, self)
-
-    @staticmethod
-    def cache_control_to_string(cache_control_attribute):
-        if cache_control_attribute == QNetworkRequest.AlwaysNetwork:
-            return 'Always load from network, do not check cache'
-        elif cache_control_attribute == QNetworkRequest.PreferNetwork:
-            return 'Load from the network if the cached entry is older than the network entry'
-        elif cache_control_attribute == QNetworkRequest.PreferCache:
-            return 'Load from cache if available, otherwise load from network'
-        elif cache_control_attribute == QNetworkRequest.AlwaysCache:
-            return 'Only load from cache, error if no cached entry available'
-        return None
-
-    def span(self):
-        return True
-
-    def text(self, column):
-        return 'Request' if column == 0 else ''
-
-
-class RequestDetailsItem(ActivityTreeItem):
-    def __init__(self, description, value, parent=None):
-        super().__init__('', parent)
-
-        self.description = description
-        self.value = value
-
-    def text(self, column):
-        if column == 0:
-            return self.description
-        else:
-            return self.value
-
-
-class RequestHeadersItem(ActivityTreeItem):
-    def __init__(self, request, parent=None):
-        super().__init__('Headers', parent)
-
-        for header in request.request().rawHeaderList():
-            RequestDetailsItem(header.data().decode('utf-8'),
-                               request.request().rawHeader(header).data().decode('utf-8'), self)
-
-    def text(self, column):
-        if column == 0:
-            return 'Headers'
-        else:
-            return ''
-
-    def span(self):
-        return True
-
-class RequestQueryItems(ActivityTreeItem):
-    def __init__(self, query_items, parent=None):
-        super().__init__('Query', parent)
-
-        for item in query_items:
-            RequestDetailsItem(item[0], item[1], self)
-
-    def text(self, column):
-        if column == 0:
-            return 'Query'
-        else:
-            return ''
-
-    def span(self):
-        return True
-
-class PostContentItem(ActivityTreeItem):
-    # request = QgsNetworkRequestParameters
-    def __init__(self, request, parent=None):
-        super().__init__('Content', parent)
-
-        # maybe should be &amp?
-        #for p in request.content().data().decode('utf-8').split('&'):
-        #    PostDetailsItem(p, self)
-
-        data = request.content().data().decode('utf-8')
-        PostDetailsItem(data, self)
-
-    def text(self, column):
-        if column == 0:
-            return 'Content'
-        else:
-            return ''
-
-    def span(self):
-        return True
-
-class PostDetailsItem(ActivityTreeItem):
-    def __init__(self, part, parent=None):
-        super().__init__('', parent)
-
-        #self.description, self.value = part.split('=')
-        self.data = part
-
-    def text(self, column):
-        if column == 0:
-            return 'Data'
-        else:
-            return self.data
-
-
-class ReplyItem(ActivityTreeItem):
-    def __init__(self, reply, parent=None):
-        super().__init__('', parent)
-        ReplyDetailsItem('Status', reply.attribute(QNetworkRequest.HttpStatusCodeAttribute), self)
-        if reply.error() != QNetworkReply.NoError:
-            ReplyDetailsItem('Error Code', reply.error(), self)
-            ReplyDetailsItem('Error', reply.errorString(), self)
-
-        RequestDetailsItem('Cache (result)', 'Used entry from cache' if reply.attribute(QNetworkRequest.SourceIsFromCacheAttribute) else 'Read from network', self)
-
-        ReplyHeadersItem(reply, self)
-
-    def span(self):
-        return True
-
-    def text(self, column):
-        return 'Reply' if column == 0 else ''
-
-
-class ReplyHeadersItem(ActivityTreeItem):
-    def __init__(self, reply, parent=None):
-        super().__init__('Headers', parent)
-
-        for header in reply.rawHeaderList():
-            ReplyDetailsItem(header.data().decode('utf-8'),
-                             reply.rawHeader(header).data().decode('utf-8'), self)
-
-    def text(self, column):
-        if column == 0:
-            return 'Headers'
-        else:
-            return ''
-
-    def span(self):
-        return True
-
-
-class ReplyDetailsItem(ActivityTreeItem):
-    def __init__(self, description, value, parent=None):
-        super().__init__('', parent)
-
-        self.description = description
-        self.value = value
-
-    def text(self, column):
-        if column == 0:
-            return self.description
-        else:
-            return self.value
-
-class SslErrorsItem(ActivityTreeItem):
-    def __init__(self, errors, parent=None):
-        super().__init__('', parent)
-        for error in errors:
-            ReplyDetailsItem('Error',
-                             error.errorString(), self)
-
-    def text(self, column):
-        if column == 0:
-            return 'SSL errors'
-        else:
-            return ''
-
-    def span(self):
-        return True
-
-
-class NetworkActivityModel(QAbstractItemModel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.root_item = RootItem()
-
-        self.is_paused = False
-
-        nam = QgsNetworkAccessManager.instance()
-
-        nam.requestAboutToBeCreated[QgsNetworkRequestParameters].connect(self.request_about_to_be_created)
-        nam.finished[QgsNetworkReplyContent].connect(self.request_finished)
-        nam.requestTimedOut[QgsNetworkRequestParameters].connect(self.request_timed_out)
-        nam.downloadProgress.connect(self.download_progress)
-        nam.requestEncounteredSslErrors.connect(self.ssl_errors)
-
-        self.requests_items = {}
-        self.request_indices = {}
-
-    def request_about_to_be_created(self, request_params):
-        self.beginInsertRows(QModelIndex(), len(self.root_item.children), len(self.root_item.children))
-        self.requests_items[request_params.requestId()] = RequestParentItem(request_params, self.root_item)
-        self.endInsertRows()
-        self.request_indices[request_params.requestId()] = self.index(len(self.requests_items)-1,0,QModelIndex())
-
-    def request_finished(self, reply):
-        if not reply.requestId() in self.requests_items:
-            return
-
-        request_index = self.request_indices[reply.requestId()]
-        request_item = self.requests_items[reply.requestId()]
-
-        self.beginInsertRows(request_index, len(request_item.children), len(request_item.children))
-        request_item.set_reply(reply)
-        self.endInsertRows()
-
-        self.dataChanged.emit(request_index,request_index)
-
-    def request_timed_out(self, reply):
-        if not reply.requestId() in self.requests_items:
-            return
-
-        request_index = self.request_indices[reply.requestId()]
-        request_item = self.requests_items[reply.requestId()]
-        request_item.set_timed_out()
-        self.dataChanged.emit(request_index,request_index)
-
-    def ssl_errors(self, requestId, errors):
-        if not requestId in self.requests_items:
-            return
-
-        request_index = self.request_indices[requestId]
-        request_item = self.requests_items[requestId]
-
-        self.beginInsertRows(request_index, len(request_item.children), len(request_item.children))
-        request_item.set_ssl_errors(errors)
-        self.endInsertRows()
-
-        self.dataChanged.emit(request_index,request_index)
-
-    def download_progress(self, request_id, received, total):
-        request_index = self.request_indices[request_id]
-        request_item = self.requests_items[request_id]
-        request_item.set_progress(received, total)
-        self.dataChanged.emit(request_index, request_index, [Qt.ToolTipRole])
-
-    def columnCount(self, parent):
-        return 2
-
-    def rowCount(self, parent):
-        if parent.column() > 0:
-            return 0
-
-        parent_item = self.root_item if not parent.isValid() else parent.internalPointer()
-        return len(parent_item.children)
-
-    def data(self, index, role):
-        if not index.isValid():
-            return
-
-        item = index.internalPointer()
-        if role == Qt.DisplayRole:
-            return item.text(index.column())
-        elif role == Qt.ToolTipRole:
-            return item.tooltip(index.column())
-        elif role == STATUS_ROLE:
-            return item.status
-        elif role == Qt.ForegroundRole:
-            if isinstance(item, RequestParentItem) and item.ssl_errors or isinstance(item, SslErrorsItem)\
-                    or isinstance(index.parent().internalPointer(), SslErrorsItem):
-                color = QColor(180, 65, 210)
-            elif item.status in (PENDING, CANCELED):
-                color = QColor(0, 0, 0, 100)
-            elif item.status == ERROR:
-                color = QColor(235, 10, 10)
-            elif item.status == TIMEOUT:
-                color = QColor(235, 10, 10)
-            else:
-                color = QColor(0, 0, 0)
-            return QBrush(color)
-
-        elif role == Qt.FontRole:
-            f = QFont()
-            if item.status == CANCELED:
-                f.setStrikeOut(True)
-            return f
-
-    def flags(self, index):
-        if not index.isValid():
-            return 0
-        return Qt.ItemIsEnabled | Qt.ItemIsSelectable
-
-    def index(self, row, column, parent):
-        if not self.hasIndex(row, column, parent):
-            return QModelIndex()
-
-        parent_item = self.root_item if not parent.isValid() else parent.internalPointer()
-        child_item = parent_item.children[row]
-        return self.createIndex(row, column, child_item)
-
-    def parent(self, index):
-        if not index.isValid():
-            return QModelIndex()
-
-        parent_item = index.internalPointer().parent
-        if parent_item.parent is None:
-            return QModelIndex()
-
-        parent_index_in_grandparent = parent_item.parent.children.index(parent_item)
-        return self.createIndex(parent_index_in_grandparent, 0, parent_item)
-
-    def headerData(self, section, orientation, role):
-        if section == 0 and orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            return "Requests"
-
-    def clear(self):
-        self.beginResetModel()
-        self.root_item = RootItem()
-        self.requests_items = {}
-        self.request_indices = {}
-        self.endResetModel()
-
-    def pause(self, state):
-        if state == self.is_paused:
-            return
-
-        self.is_paused = state
-        if self.is_paused:
-            QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].disconnect(self.request_about_to_be_created)
-        else:
-            QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].connect(self.request_about_to_be_created)
-
-
-class ActivityProxyModel(QSortFilterProxyModel):
-
-    def __init__(self, source_model, parent = None):
-
-        super().__init__(parent)
-        self.source_model = source_model
-        self.setSourceModel(self.source_model)
-        self.filter_string = ''
-        self.show_successful = True
-        self.show_timeouts = True
-
-    def set_filter_string(self, string):
-        self.filter_string = string
-        self.invalidateFilter()
-
-    def set_show_successful(self, show):
-        self.show_successful = show
-        self.invalidateFilter()
-
-    def set_show_timeouts(self, show):
-        self.show_timeouts = show
-        self.invalidateFilter()
-
-    def filterAcceptsRow(self, sourceRow, sourceParent):
-        item = self.source_model.index(sourceRow,0,sourceParent).internalPointer()
-        if isinstance(item,RequestParentItem):
-            if item.status in (COMPLETE, CANCELED) and not self.show_successful:
-                return False
-            elif item.status == TIMEOUT and not self.show_timeouts:
-                return False
-
-            return self.filter_string.lower() in item.url.url().lower()
-        else:
-            return True
-
-
 class ActivityView(QTreeView):
-    def __init__(self, parent=None):
+    def __init__(self, logger, parent=None):
         super().__init__(parent)
-        self.model = NetworkActivityModel(self)
+        self.model = logger
         self.proxy_model = ActivityProxyModel(self.model, self)
         self.setModel(self.proxy_model)
         self.expanded.connect(self.item_expanded)
@@ -595,7 +52,7 @@ class ActivityView(QTreeView):
         self.customContextMenuRequested.connect(self.context_menu)
 
         # not working
-        self.setWordWrap(True);
+        self.setWordWrap(True)
 
     def item_expanded(self, index):
         """Slot to be called after expanding an ActivityView item.
@@ -633,7 +90,7 @@ class ActivityView(QTreeView):
             this_index = self.model.index(r, 0, parent)
             if this_index.internalPointer().span():
                 proxy_index = self.proxy_model.mapFromSource(self.model.index(r, 0, parent))
-                self.setFirstColumnSpanned(proxy_index.row(),proxy_index.parent(), True)
+                self.setFirstColumnSpanned(proxy_index.row(), proxy_index.parent(), True)
             for i in range(self.model.rowCount(this_index)):
                 self.rows_inserted(this_index, i, i)
 
@@ -675,15 +132,16 @@ class ActivityView(QTreeView):
             menu.addAction(clear_action)
             menu.exec(self.viewport().mapToGlobal(point))
 
+
 class NetworkActivityDock(QgsDockWidget):
 
-    def __init__(self):
+    def __init__(self, logger):
         super().__init__()
         self.setWindowTitle('Network Activity')
-        self.view = ActivityView()
+        self.view = ActivityView(logger)
 
         l = QVBoxLayout()
-        l.setContentsMargins(0,0,0,0)
+        l.setContentsMargins(0, 0, 0, 0)
 
         self.clear_action = QAction('Clear')
         self.pause_action = QAction('Pause')
@@ -718,5 +176,3 @@ class NetworkActivityDock(QgsDockWidget):
         w = QWidget()
         w.setLayout(l)
         self.setWidget(w)
-
-

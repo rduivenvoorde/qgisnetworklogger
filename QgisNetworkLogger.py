@@ -10,13 +10,7 @@
 # (at your option) any later version.
 # ---------------------------------------------------------------------
 
-from qgis.core import (
-    QgsNetworkAccessManager,
-    QgsNetworkReplyContent,
-    QgsNetworkRequestParameters,
-    QgsMessageLog,
-    Qgis
-)
+
 from qgis.PyQt.QtCore import (
     QCoreApplication,
     Qt
@@ -30,46 +24,49 @@ from qgis.PyQt.QtWidgets import (
     QMessageBox,
     QShortcut
 )
-from qgis.PyQt.QtNetwork import QNetworkRequest, QNetworkReply
 
 from .log_dock_widget import NetworkActivityDock
+from .activity_logger import NetworkActivityLogger
 
 import os
+
 
 class QgisNetworkLogger:
 
     def __init__(self, iface):
         # Save reference to the QGIS interface
         self.iface = iface
-        self.canvas = iface.mapCanvas()
-        # get the handle of the (singleton?) QgsNetworkAccessManager instance
-        self.nam = QgsNetworkAccessManager.instance()
-        # TODO put in gui/settings
-        self.show_request_headers = True
-        self.show_response_headers = True
+
+        # don't wait for GUI to start logging...
+        self.logger = NetworkActivityLogger()
         self.dock = None
-        #import pydevd
-        #pydevd.settrace('localhost', port=5678, stdoutToServer=True, stderrToServer=True)
+        self.show_dock_shortcut = None
 
     def initGui(self):
         # Create action that will start plugina
-        self.action = QAction(QIcon(os.path.dirname(__file__)+'/icons/icon.png'), '&QGIS Network Logger', self.iface.mainWindow())
+        self.action = QAction(QIcon(os.path.dirname(__file__) + '/icons/icon.png'), '&QGIS Network Logger',
+                              self.iface.mainWindow())
         # connect the action to the run method
         self.action.triggered.connect(self.show_dialog)
         # Add menu item
         self.iface.addPluginToMenu('QGIS Network Logger', self.action)
 
-        self.dock = NetworkActivityDock()
-        self.dock.setObjectName('NetworkActivityDock')
-        self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock)
-
         self.show_dock_shortcut = QShortcut(QKeySequence("F12"), self.iface.mainWindow())
-        self.show_dock_shortcut.activated.connect(self.dock.toggleUserVisible)
+        self.show_dock_shortcut.activated.connect(self.toggle_dock)
 
     def unload(self):
         # Remove the plugin menu item
-        self.iface.removePluginMenu('QGIS Network Logger',self.action)
-        self.iface.removeDockWidget(self.dock)
+        self.iface.removePluginMenu('QGIS Network Logger', self.action)
+        if self.dock:
+            self.iface.removeDockWidget(self.dock)
+
+    def toggle_dock(self):
+        if not self.dock:
+            self.dock = NetworkActivityDock(self.logger)
+            self.dock.setObjectName('NetworkActivityDock')
+            self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock)
+        else:
+            self.dock.toggleUserVisible()
 
     def show_dialog(self):
         QMessageBox.information(
@@ -80,7 +77,3 @@ class QgisNetworkLogger:
                                                             'Only listening to the requestAboutToBeCreated and requestTimedOut signals.\n\n'
                                                             'if you want more: see code'))
         return
-
-    def show(self, msg):
-        QgsMessageLog.logMessage(msg, "QGIS Network Logger...", Qgis.Info)
-
