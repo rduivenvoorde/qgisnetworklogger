@@ -451,9 +451,11 @@ class NetworkActivityLogger(QAbstractItemModel):
 
         self.dataChanged.emit(request_index, request_index)
 
-    def download_progress(self, request_id, received, total):
-        request_index = self.request_indices[request_id]
-        request_item = self.requests_items[request_id]
+    def download_progress(self, requestId, received, total):
+        if not requestId in self.requests_items:
+            return
+        request_index = self.request_indices[requestId]
+        request_item = self.requests_items[requestId]
         request_item.set_progress(received, total)
         self.dataChanged.emit(request_index, request_index, [Qt.ToolTipRole])
 
