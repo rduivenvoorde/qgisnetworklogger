@@ -52,8 +52,6 @@ class ActivityView(QTreeView):
         self.customContextMenuRequested.connect(self.context_menu)
 
         self.setUniformRowHeights(True)
-        # not working
-        self.setWordWrap(True)
 
     def item_expanded(self, index):
         """Slot to be called after expanding an ActivityView item.
