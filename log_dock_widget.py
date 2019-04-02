@@ -51,6 +51,7 @@ class ActivityView(QTreeView):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.context_menu)
 
+        self.setUniformRowHeights(True)
         # not working
         self.setWordWrap(True)
 
