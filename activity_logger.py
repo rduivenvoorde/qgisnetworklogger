@@ -9,6 +9,9 @@
 # (at your option) any later version.
 # ---------------------------------------------------------------------
 
+# https://doc.qt.io/qt-5/qtwidgets-itemviews-editabletreemodel-example.html#design
+
+
 import time
 
 from qgis.PyQt.QtCore import (
@@ -39,6 +42,9 @@ from qgis.core import (
     QgsNetworkRequestParameters
 )
 
+import logging
+log = logging.getLogger('QgisNetworkLogger')
+
 STATUS_ROLE = Qt.UserRole + 1
 
 PENDING = 'PENDING'
@@ -50,15 +56,13 @@ CANCELED = 'CANCELED'
 
 class ActivityTreeItem(object):
 
-    def __init__(self, name, parent=None):
-        self.name = name
-        self.populated_children = False
-
+    def __init__(self, parent=None):
         self.parent = parent
         self.children = []
-        self.status = COMPLETE
         if parent:
-            parent.children.append(self)
+           parent.children.append(self)
+
+        self.status = COMPLETE
 
     def span(self):
         return False
@@ -94,17 +98,25 @@ class ActivityTreeItem(object):
             op = "DELETE"
         return op
 
+    def position(self):
+        # return the place of myself in the list of children of my parent
+        # (this to be able to let the model know my 'row')
+        if self.parent:
+            return self.parent.children.index(self)
+        return 0
+
 
 class RootItem(ActivityTreeItem):
     def __init__(self, parent=None):
-        super().__init__('', parent)
+        super().__init__(parent)
 
 
 class RequestParentItem(ActivityTreeItem):
 
     def __init__(self, request, parent=None):
-        super().__init__('', parent)
+        super().__init__(parent)
         self.url = request.request().url()
+        self.id = request.requestId()
         self.operation = self.operation2string(request.operation())
         self.time = time.time()
         self.http_status = -1
@@ -134,7 +146,8 @@ class RequestParentItem(ActivityTreeItem):
 
     def text(self, column):
         if column == 0:
-            return '{} {}'.format(self.operation, self.url.url())
+            # id is the NAM id
+            return '{} {} {}'.format(self.id, self.operation, self.url.url())
         return ''
 
     def open_url(self):
@@ -195,7 +208,7 @@ class RequestParentItem(ActivityTreeItem):
 
 class RequestItem(ActivityTreeItem):
     def __init__(self, request, parent=None):
-        super().__init__('', parent)
+        super().__init__(parent)
 
         self.url = request.request().url()
         self.operation = self.operation2string(request.operation())
@@ -240,21 +253,22 @@ class RequestItem(ActivityTreeItem):
 
 class RequestDetailsItem(ActivityTreeItem):
     def __init__(self, description, value, parent=None):
-        super().__init__('', parent)
+        super().__init__(parent)
 
         self.description = description
         self.value = value
 
     def text(self, column):
         if column == 0:
-            return self.description
+            #return self.description
+            return '{:30}: {}'.format(self.description, self.value)
         else:
             return self.value
 
 
 class RequestHeadersItem(ActivityTreeItem):
     def __init__(self, request, parent=None):
-        super().__init__('Headers', parent)
+        super().__init__(parent)
 
         for header in request.request().rawHeaderList():
             RequestDetailsItem(header.data().decode('utf-8'),
@@ -272,7 +286,7 @@ class RequestHeadersItem(ActivityTreeItem):
 
 class RequestQueryItems(ActivityTreeItem):
     def __init__(self, query_items, parent=None):
-        super().__init__('Query', parent)
+        super().__init__(parent)
 
         for item in query_items:
             RequestDetailsItem(item[0], item[1], self)
@@ -290,7 +304,7 @@ class RequestQueryItems(ActivityTreeItem):
 class PostContentItem(ActivityTreeItem):
     # request = QgsNetworkRequestParameters
     def __init__(self, request, parent=None):
-        super().__init__('Content', parent)
+        super().__init__(parent)
 
         # maybe should be &amp?
         # for p in request.content().data().decode('utf-8').split('&'):
@@ -311,21 +325,22 @@ class PostContentItem(ActivityTreeItem):
 
 class PostDetailsItem(ActivityTreeItem):
     def __init__(self, part, parent=None):
-        super().__init__('', parent)
+        super().__init__(parent)
 
         # self.description, self.value = part.split('=')
         self.data = part
 
     def text(self, column):
         if column == 0:
-            return 'Data'
+            #return 'Data'
+            return '{:30}: {}'.format('Data', self.data)
         else:
             return self.data
 
 
 class ReplyItem(ActivityTreeItem):
     def __init__(self, reply, parent=None):
-        super().__init__('', parent)
+        super().__init__(parent)
         ReplyDetailsItem('Status', reply.attribute(QNetworkRequest.HttpStatusCodeAttribute), self)
         if reply.error() != QNetworkReply.NoError:
             ReplyDetailsItem('Error Code', reply.error(), self)
@@ -345,7 +360,7 @@ class ReplyItem(ActivityTreeItem):
 
 class ReplyHeadersItem(ActivityTreeItem):
     def __init__(self, reply, parent=None):
-        super().__init__('Headers', parent)
+        super().__init__(parent)
 
         for header in reply.rawHeaderList():
             ReplyDetailsItem(header.data().decode('utf-8'),
@@ -363,21 +378,22 @@ class ReplyHeadersItem(ActivityTreeItem):
 
 class ReplyDetailsItem(ActivityTreeItem):
     def __init__(self, description, value, parent=None):
-        super().__init__('', parent)
+        super().__init__(parent)
 
         self.description = description
         self.value = value
 
     def text(self, column):
         if column == 0:
-            return self.description
+            #return self.description
+            return '{:30}: {}'.format(self.description, self.value)
         else:
             return self.value
 
 
 class SslErrorsItem(ActivityTreeItem):
     def __init__(self, errors, parent=None):
-        super().__init__('', parent)
+        super().__init__(parent)
         for error in errors:
             ReplyDetailsItem('Error',
                              error.errorString(), self)
@@ -408,21 +424,18 @@ class NetworkActivityLogger(QAbstractItemModel):
         nam.requestEncounteredSslErrors.connect(self.ssl_errors)
 
         self.requests_items = {}
-        self.request_indices = {}
 
     def request_about_to_be_created(self, request_params):
         self.beginInsertRows(QModelIndex(), len(self.root_item.children), len(self.root_item.children))
         self.requests_items[request_params.requestId()] = RequestParentItem(request_params, self.root_item)
         self.endInsertRows()
-        self.request_indices[request_params.requestId()] = self.index(len(self.requests_items) - 1, 0, QModelIndex())
 
     def request_finished(self, reply):
         if not reply.requestId() in self.requests_items:
             return
-
-        request_index = self.request_indices[reply.requestId()]
         request_item = self.requests_items[reply.requestId()]
-
+        # find the row: the position of the RequestParentItem in the rootNode
+        request_index = self.createIndex(request_item.position(), 0, request_item)
         self.beginInsertRows(request_index, len(request_item.children), len(request_item.children))
         request_item.set_reply(reply)
         self.endInsertRows()
@@ -432,19 +445,17 @@ class NetworkActivityLogger(QAbstractItemModel):
     def request_timed_out(self, reply):
         if not reply.requestId() in self.requests_items:
             return
-
-        request_index = self.request_indices[reply.requestId()]
         request_item = self.requests_items[reply.requestId()]
+        request_index = self.createIndex(request_item.position(), 0, request_item)
         request_item.set_timed_out()
+
         self.dataChanged.emit(request_index, request_index)
 
     def ssl_errors(self, requestId, errors):
         if not requestId in self.requests_items:
             return
-
-        request_index = self.request_indices[requestId]
         request_item = self.requests_items[requestId]
-
+        request_index = self.createIndex(request_item.position(), 0, request_item)
         self.beginInsertRows(request_index, len(request_item.children), len(request_item.children))
         request_item.set_ssl_errors(errors)
         self.endInsertRows()
@@ -454,18 +465,18 @@ class NetworkActivityLogger(QAbstractItemModel):
     def download_progress(self, requestId, received, total):
         if not requestId in self.requests_items:
             return
-        request_index = self.request_indices[requestId]
         request_item = self.requests_items[requestId]
+        request_index = self.createIndex(request_item.position(), 0, request_item)
         request_item.set_progress(received, total)
         self.dataChanged.emit(request_index, request_index, [Qt.ToolTipRole])
 
+
     def columnCount(self, parent):
-        return 2
+        return 1
 
     def rowCount(self, parent):
         if parent.column() > 0:
             return 0
-
         parent_item = self.root_item if not parent.isValid() else parent.internalPointer()
         return len(parent_item.children)
 
@@ -505,11 +516,12 @@ class NetworkActivityLogger(QAbstractItemModel):
             return 0
         return Qt.ItemIsEnabled | Qt.ItemIsSelectable
 
-    def index(self, row, column, parent):
-        if not self.hasIndex(row, column, parent):
+    def index(self, row, column, parent_index):
+
+        if not self.hasIndex(row, column, parent_index):
             return QModelIndex()
 
-        parent_item = self.root_item if not parent.isValid() else parent.internalPointer()
+        parent_item = self.root_item if not parent_index.isValid() else parent_index.internalPointer()
         child_item = parent_item.children[row]
         return self.createIndex(row, column, child_item)
 
@@ -532,10 +544,10 @@ class NetworkActivityLogger(QAbstractItemModel):
         self.beginResetModel()
         self.root_item = RootItem()
         self.requests_items = {}
-        self.request_indices = {}
         self.endResetModel()
 
     def pause(self, state):
+        log.debug('NetworkLogger.pause, state: {}'.format(state))
         if state == self.is_paused:
             return
 

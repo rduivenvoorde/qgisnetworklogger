@@ -21,6 +21,9 @@ from qgis.PyQt.QtWidgets import (
     QAction,
     QMenu
 )
+from qgis.PyQt.QtGui import (
+    QFont
+)
 from qgis.gui import (
     QgsDockWidget,
     QgsFilterLineEdit
@@ -37,22 +40,26 @@ ERROR = 'ERROR'
 TIMEOUT = 'TIMEOUT'
 CANCELED = 'CANCELED'
 
+import logging
+log = logging.getLogger('QgisNetworkLogger')
 
 class ActivityView(QTreeView):
+
     def __init__(self, logger, parent=None):
         super().__init__(parent)
         self.model = logger
+
+        # self.setModel(self.model)
+        # self.proxy_model = None
         self.proxy_model = ActivityProxyModel(self.model, self)
         self.setModel(self.proxy_model)
+
         self.expanded.connect(self.item_expanded)
 
         self.model.rowsInserted.connect(self.rows_inserted)
 
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.context_menu)
-
-        # not working
-        self.setWordWrap(True)
 
     def item_expanded(self, index):
         """Slot to be called after expanding an ActivityView item.
@@ -65,7 +72,7 @@ class ActivityView(QTreeView):
         if not index.parent().isValid():
             self.expand_children(index)
             # upon expanding a request row, resize first column to fully readable size:
-            self.setColumnWidth(0, self.sizeHintForColumn(0))
+            #self.setColumnWidth(0, self.sizeHintForColumn(0))
         # make ALL request information visible by scrolling view to it
         self.scrollTo(index)
 
@@ -85,18 +92,6 @@ class ActivityView(QTreeView):
             self.expand(index)
 
     def rows_inserted(self, parent, first, last):
-        # silly qt API - this shouldn't be so hard!
-        for r in range(first, last + 1):
-            this_index = self.model.index(r, 0, parent)
-            if this_index.internalPointer().span():
-                proxy_index = self.proxy_model.mapFromSource(self.model.index(r, 0, parent))
-                self.setFirstColumnSpanned(proxy_index.row(), proxy_index.parent(), True)
-            for i in range(self.model.rowCount(this_index)):
-                self.rows_inserted(this_index, i, i)
-
-            w = this_index.internalPointer().createWidget()
-            if w:
-                self.setIndexWidget(this_index, w)
         # always make the last line visible
         self.scrollToBottom()
 
@@ -117,7 +112,10 @@ class ActivityView(QTreeView):
 
     def context_menu(self, point):
         proxy_model_index = self.indexAt(point)
-        index = self.proxy_model.mapToSource(proxy_model_index)
+        if self.proxy_model:
+            index = self.proxy_model.mapToSource(proxy_model_index)
+        else:
+            index = proxy_model_index
         if index.isValid():
             menu = QMenu()
             populated = False
@@ -138,10 +136,16 @@ class NetworkActivityDock(QgsDockWidget):
     def __init__(self, logger):
         super().__init__()
         self.setWindowTitle('Network Activity')
-        self.view = ActivityView(logger)
 
-        l = QVBoxLayout()
-        l.setContentsMargins(0, 0, 0, 0)
+        self.view = ActivityView(logger)
+        font = QFont()
+        font.setFamily('Courier')
+        font.setPointSize(font.pointSize()-1)
+        self.view.setFont(font)
+        self.logger = logger
+
+        self.l = QVBoxLayout()
+        self.l.setContentsMargins(0, 0, 0, 0)
 
         self.clear_action = QAction('Clear')
         self.pause_action = QAction('Pause')
@@ -151,9 +155,10 @@ class NetworkActivityDock(QgsDockWidget):
         self.toolbar.setIconSize(iface.iconSize(True))
         self.toolbar.addAction(self.clear_action)
         self.toolbar.addAction(self.pause_action)
+
         self.clear_action.triggered.connect(self.view.clear)
         self.pause_action.toggled.connect(self.view.pause)
-
+        self.pause_action.toggled.connect(self.logger.pause)
         self.show_success_action = QAction('Show successful requests')
         self.show_success_action.setCheckable(True)
         self.show_success_action.setChecked(True)
@@ -170,9 +175,9 @@ class NetworkActivityDock(QgsDockWidget):
         self.filter_line_edit.setShowSearchIcon(True)
         self.filter_line_edit.setPlaceholderText('Filter requests')
         self.filter_line_edit.textChanged.connect(self.view.set_filter_string)
-        l.addWidget(self.toolbar)
-        l.addWidget(self.filter_line_edit)
-        l.addWidget(self.view)
-        w = QWidget()
-        w.setLayout(l)
-        self.setWidget(w)
+        self.l.addWidget(self.toolbar)
+        self.l.addWidget(self.filter_line_edit)
+        self.l.addWidget(self.view)
+        self.w = QWidget()
+        self.w.setLayout(self.l)
+        self.setWidget(self.w)
