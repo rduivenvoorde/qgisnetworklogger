@@ -112,6 +112,7 @@ class ActivityView(QTreeView):
 
     def context_menu(self, point):
         proxy_model_index = self.indexAt(point)
+        log('proxy_model_index {}, valid: ()'.format(proxy_model_index, proxy_model_index.isValid()))
         if self.proxy_model:
             index = self.proxy_model.mapToSource(proxy_model_index)
         else:
@@ -158,7 +159,6 @@ class NetworkActivityDock(QgsDockWidget):
 
         self.clear_action.triggered.connect(self.view.clear)
         self.pause_action.toggled.connect(self.view.pause)
-        self.pause_action.toggled.connect(self.logger.pause)
         self.show_success_action = QAction('Show successful requests')
         self.show_success_action.setCheckable(True)
         self.show_success_action.setChecked(True)
@@ -167,9 +167,12 @@ class NetworkActivityDock(QgsDockWidget):
         self.show_timeouts_action.setCheckable(True)
         self.show_timeouts_action.setChecked(True)
         self.show_timeouts_action.toggled.connect(self.view.show_timeouts)
+        self.show_remove1_action = QAction('Remove One')
+        self.show_remove1_action.triggered.connect(self.logger.remove_one)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.show_success_action)
         self.toolbar.addAction(self.show_timeouts_action)
+        self.toolbar.addAction(self.show_remove1_action)
 
         self.filter_line_edit = QgsFilterLineEdit()
         self.filter_line_edit.setShowSearchIcon(True)

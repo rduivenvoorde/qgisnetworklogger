@@ -430,6 +430,10 @@ class NetworkActivityLogger(QAbstractItemModel):
         self.requests_items[request_params.requestId()] = RequestParentItem(request_params, self.root_item)
         self.endInsertRows()
 
+        # request_item = self.requests_items[request_params.requestId()]
+        # request_index = self.createIndex(request_item.position(), 0,request_item)
+        # self.dataChanged.emit(request_index, request_index)
+
     def request_finished(self, reply):
         if not reply.requestId() in self.requests_items:
             return
@@ -468,8 +472,8 @@ class NetworkActivityLogger(QAbstractItemModel):
         request_item = self.requests_items[requestId]
         request_index = self.createIndex(request_item.position(), 0, request_item)
         request_item.set_progress(received, total)
-        self.dataChanged.emit(request_index, request_index, [Qt.ToolTipRole])
 
+        self.dataChanged.emit(request_index, request_index, [Qt.ToolTipRole])
 
     def columnCount(self, parent):
         return 1
@@ -511,10 +515,12 @@ class NetworkActivityLogger(QAbstractItemModel):
                 f.setStrikeOut(True)
             return f
 
-    def flags(self, index):
-        if not index.isValid():
-            return 0
-        return Qt.ItemIsEnabled | Qt.ItemIsSelectable
+    # not sure why this raises exceptions but commenting for now
+    # is it used?
+    # def flags(self, index):
+    #     if not index.isValid():
+    #         return 0
+    #     return Qt.ItemIsEnabled | Qt.ItemIsSelectable
 
     def index(self, row, column, parent_index):
 
@@ -558,6 +564,15 @@ class NetworkActivityLogger(QAbstractItemModel):
         else:
             QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].connect(
                 self.request_about_to_be_created)
+
+    def remove_one(self):
+        log.debug('Remove 1')
+
+        # only first one: from 0 till 0
+        request_index = self.createIndex(0, 0, self.root_item.children[0])
+        self.beginRemoveRows(request_index, 0, 0)
+        self.root_item.children.pop(0)
+        self.endRemoveRows()
 
 
 class ActivityProxyModel(QSortFilterProxyModel):
