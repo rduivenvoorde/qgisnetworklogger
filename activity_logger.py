@@ -567,11 +567,9 @@ class NetworkActivityLogger(QAbstractItemModel):
 
     def remove_one(self):
         log.debug('Remove 1')
-
-        # only first one: from 0 till 0
-        request_index = self.createIndex(0, 0, self.root_item.children[0])
-        self.beginRemoveRows(request_index, 0, 0)
-        self.root_item.children.pop(0)
+        self.beginRemoveRows(QModelIndex(), 0, 0)
+        if len(self.root_item.children)>0:
+            self.root_item.children.pop(0)
         self.endRemoveRows()
 
 
