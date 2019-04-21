@@ -101,7 +101,7 @@ class ActivityTreeItem(object):
     def position(self):
         # return the place of myself in the list of children of my parent
         # (this to be able to let the model know my 'row')
-        if self.parent:
+        if self.parent and self in self.parent.children:
             return self.parent.children.index(self)
         return 0
 
@@ -426,13 +426,14 @@ class NetworkActivityLogger(QAbstractItemModel):
         self.requests_items = {}
 
     def request_about_to_be_created(self, request_params):
-        self.beginInsertRows(QModelIndex(), len(self.root_item.children), len(self.root_item.children))
+        child_count = len(self.root_item.children)
+        self.beginInsertRows(QModelIndex(), child_count, child_count)
         self.requests_items[request_params.requestId()] = RequestParentItem(request_params, self.root_item)
         self.endInsertRows()
 
-        # request_item = self.requests_items[request_params.requestId()]
-        # request_index = self.createIndex(request_item.position(), 0,request_item)
-        # self.dataChanged.emit(request_index, request_index)
+        NODES2RETAIN = 45  # put in some settings dialog?
+        if child_count > (NODES2RETAIN*1.2):  # 20% more as buffer
+            self.pop_nodes(child_count-NODES2RETAIN)
 
     def request_finished(self, reply):
         if not reply.requestId() in self.requests_items:
@@ -571,6 +572,15 @@ class NetworkActivityLogger(QAbstractItemModel):
         if len(self.root_item.children)>0:
             self.root_item.children.pop(0)
         self.endRemoveRows()
+
+    def pop_nodes(self, count):
+        log.debug('Removing {} Request nodes.'.format(count))
+        self.beginRemoveRows(QModelIndex(), 0, count-1)
+        if len(self.root_item.children) > 0:
+            self.root_item.children = self.root_item.children[count:]
+        self.endRemoveRows()
+
+
 
 
 class ActivityProxyModel(QSortFilterProxyModel):
