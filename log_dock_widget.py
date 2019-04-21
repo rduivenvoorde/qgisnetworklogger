@@ -112,7 +112,6 @@ class ActivityView(QTreeView):
 
     def context_menu(self, point):
         proxy_model_index = self.indexAt(point)
-        log('proxy_model_index {}, valid: ()'.format(proxy_model_index, proxy_model_index.isValid()))
         if self.proxy_model:
             index = self.proxy_model.mapToSource(proxy_model_index)
         else:
