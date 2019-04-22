@@ -26,19 +26,11 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from .ui import NetworkActivityDock
-from .model import NetworkActivityLogger
+from .model import ActivityModel
 
 import os
-'''
-Some magic to make it possible to use code like:
 
-import logging
-from . import LOGGER_NAME
-log = logging.getLogger(LOGGER_NAME)
-
-in all this plugin code, and it will show up in the QgsMessageLog
-
-'''
+# Create the logger for this QgisNetworkLogger plugin
 import logging
 from . import LOGGER_NAME
 from qgis.core import (
@@ -46,6 +38,16 @@ from qgis.core import (
     QgsMessageLog
 )
 class QgisLogHandler(logging.StreamHandler):
+    '''
+    Some magic to make it possible to use code like:
+
+    import logging
+    from . import LOGGER_NAME
+    log = logging.getLogger(LOGGER_NAME)
+
+    in all this plugin code, and it will show up in the QgsMessageLog
+
+    '''
     def __init__(self, topic):
         logging.StreamHandler.__init__(self)
         # topic is used both as logger id and for tab
@@ -60,6 +62,7 @@ class QgisLogHandler(logging.StreamHandler):
         msg=msg.replace('<', '&lt;').replace('>', '&gt;')
         QgsMessageLog.logMessage('{}'.format(msg), self.topic, Qgis.Info)
 
+
 log = logging.getLogger(LOGGER_NAME)
 # checking below is needed, else we add this handler every time the plugin
 # is reloaded (during development), then the msg is emitted several times
@@ -70,13 +73,16 @@ if not log.hasHandlers():
 log.setLevel(logging.DEBUG)
 
 class QgisNetworkLogger:
+    '''
+    The Actual QgisNetworkLogger plugin
+    '''
 
     def __init__(self, iface):
         # Save reference to the QGIS interface
         self.iface = iface
 
         # don't wait for GUI to start logging...
-        self.logger = NetworkActivityLogger()
+        self.logger = ActivityModel()
         self.dock = None
 
     def initGui(self):
@@ -108,6 +114,7 @@ class QgisNetworkLogger:
             self.iface.removeDockWidget(self.dock)
 
     def toggle_dock(self):
+        # show/hide the dock with the Treeview
         if not self.dock:
             self.dock = NetworkActivityDock(self.logger)
             self.dock.setObjectName('NetworkActivityDock')
@@ -116,6 +123,7 @@ class QgisNetworkLogger:
             self.dock.toggleUserVisible()
 
     def show_dialog(self):
+        # this was a warning, not sure if we want to show it...
         QMessageBox.information(
             self.iface.mainWindow(),
             QCoreApplication.translate('QGISNetworkLogger', 'QGIS Network Logger'),

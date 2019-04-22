@@ -34,11 +34,17 @@ from qgis.utils import (
 
 from .model import ActivityProxyModel
 
+# get the logger for this QgisNetworkLogger plugin
 import logging
 from . import LOGGER_NAME
 log = logging.getLogger(LOGGER_NAME)
 
 class ActivityView(QTreeView):
+    """
+    The actual 'view' of all Request is this QTreeView, backed by
+    the ActivityModel(a QAbstractItemModel).
+    The model is wrapped in a proxy model to be able to search/filter.
+    """
 
     def __init__(self, logger, parent=None):
         super().__init__(parent)
@@ -102,6 +108,7 @@ class ActivityView(QTreeView):
     def show_timeouts(self, show):
         self.proxy_model.set_show_timeouts(show)
 
+    # do we actually want a 'Clear' context menu item in EVERY node???
     def context_menu(self, point):
         proxy_model_index = self.indexAt(point)
         if self.proxy_model:
@@ -124,6 +131,10 @@ class ActivityView(QTreeView):
 
 
 class NetworkActivityDock(QgsDockWidget):
+    """
+    The Dock holding the actual treeview.
+    Also having some buttons to clear/pause and filter the requests.
+    """
 
     def __init__(self, logger):
         super().__init__()

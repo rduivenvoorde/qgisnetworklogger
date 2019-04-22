@@ -42,46 +42,104 @@ from qgis.core import (
     QgsNetworkRequestParameters
 )
 
+# get the logger for this QgisNetworkLogger plugin
 import logging
 from . import LOGGER_NAME
 log = logging.getLogger(LOGGER_NAME)
 
+"""
+Custom role to be able to keep the Status in the model data
+"""
 STATUS_ROLE = Qt.UserRole + 1
 
+"""
+Constants for the different 'Statuses' a NetworkRequest can be in.
+"""
 PENDING = 'PENDING'
 COMPLETE = 'COMPLETE'
 ERROR = 'ERROR'
 TIMEOUT = 'TIMEOUT'
 CANCELED = 'CANCELED'
 
+"""
+Constant for the amount of nodes to keep available, to be able to limit
+the number of nodes to retain and paint in the Views
+"""
+NODES2RETAIN = 45  # put in some settings dialog?
 
-class NetworkActivityLogger(QAbstractItemModel):
+
+class ActivityModel(QAbstractItemModel):
+    """
+    A (QAbstractItem)Model class for all the items from QgsNetworkRequests
+    and Responses.
+
+    Is responsible for:
+    - connecting to current QgsNetworkAccessManager, which creates all
+    kind of signals to which we connect to be able to show information
+    about it in the Treeview
+
+    Upon every network event (like a request to be created, finished etc),
+    an ActivityTreeItem (an QAbstractItem) is created to get the data
+    needed to be returned upon request of the View which uses this model.
+    In our case a QTreeview in a DockWidget
+
+    The model when being used looks more or less like this:
+
+    RootItem
+      |__RequestParentItem (showing id, type (GET etc) url)
+           |__RequestItem (holding Request details)
+                |__ RequestDetailsItem (key-value pairs with info)
+                |__ RequestQueryItems ('Query' holding query info)
+                      |__ RequestDetailsItem (key-value pairs with info)
+                |__ RequestHeadersItem ('Headers')
+                      |__ RequestDetailsItem (key-value pairs with info)
+                |__ PostContentItem (showing Data in case of POST)
+                      |__ PostDetailsItem (key-value pairs with info)
+           |__ReplyItem (holding Reply details)
+                |__ ReplyHeadersItem ('Headers')
+                      |__ ReplyDetailsItem (key-value pairs with info)
+        ...
+      |__RequestParentItem (showing id, type (GET etc) url)
+        ...
+
+    """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.root_item = RootItem()
 
         self.is_paused = False
 
-        nam = QgsNetworkAccessManager.instance()
+        # nam = NAM = NetworkAccessManager is a singleton who is responsible
+        # for all network requests, use of proxy etc etc
+        self.nam = QgsNetworkAccessManager.instance()
 
-        nam.requestAboutToBeCreated[QgsNetworkRequestParameters].connect(self.request_about_to_be_created)
-        nam.finished[QgsNetworkReplyContent].connect(self.request_finished)
-        nam.requestTimedOut[QgsNetworkRequestParameters].connect(self.request_timed_out)
-        nam.downloadProgress.connect(self.download_progress)
-        nam.requestEncounteredSslErrors.connect(self.ssl_errors)
-
+        # dictionary with all Requests (actually RequestParentItem's)
+        # the requestId() of a QgsNetworkRequestParameters is the name/key in
+        # this dictionary. This requestId is just an unique counter from the
+        # NAM
         self.requests_items = {}
 
+        # let us connect to all signals the NAM is throwing so we can react:
+        self.nam.requestAboutToBeCreated[QgsNetworkRequestParameters]\
+            .connect(self.request_about_to_be_created)
+        self.nam.finished[QgsNetworkReplyContent].connect(self.request_finished)
+        self.nam.requestTimedOut[QgsNetworkRequestParameters]\
+            .connect(self.request_timed_out)
+        self.nam.downloadProgress.connect(self.download_progress)
+        self.nam.requestEncounteredSslErrors.connect(self.ssl_errors)
+
+    # slot for nam.requestAboutToBeCreated[QgsNetworkRequestParameters]
     def request_about_to_be_created(self, request_params):
         child_count = len(self.root_item.children)
         self.beginInsertRows(QModelIndex(), child_count, child_count)
-        self.requests_items[request_params.requestId()] = RequestParentItem(request_params, self.root_item)
+        self.requests_items[request_params.requestId()] = \
+            RequestParentItem(request_params, self.root_item)
         self.endInsertRows()
 
-        NODES2RETAIN = 45  # put in some settings dialog?
         if child_count > (NODES2RETAIN*1.2):  # 20% more as buffer
             self.pop_nodes(child_count-NODES2RETAIN)
 
+    # slot for nam.finished[QgsNetworkReplyContent]
     def request_finished(self, reply):
         if not reply.requestId() in self.requests_items:
             return
@@ -94,6 +152,7 @@ class NetworkActivityLogger(QAbstractItemModel):
 
         self.dataChanged.emit(request_index, request_index)
 
+    # slot for nam.requestTimedOut[QgsNetworkRequestParameters]
     def request_timed_out(self, reply):
         if not reply.requestId() in self.requests_items:
             return
@@ -103,6 +162,7 @@ class NetworkActivityLogger(QAbstractItemModel):
 
         self.dataChanged.emit(request_index, request_index)
 
+    # slot for nam.requestEncounteredSslErrors
     def ssl_errors(self, requestId, errors):
         if not requestId in self.requests_items:
             return
@@ -114,6 +174,7 @@ class NetworkActivityLogger(QAbstractItemModel):
 
         self.dataChanged.emit(request_index, request_index)
 
+    # slot for nam.downloadProgress
     def download_progress(self, requestId, received, total):
         if not requestId in self.requests_items:
             return
@@ -124,15 +185,34 @@ class NetworkActivityLogger(QAbstractItemModel):
         self.dataChanged.emit(request_index, request_index, [Qt.ToolTipRole])
 
     def columnCount(self, parent):
+        """
+        QAbstractItemModel interface: return the number of columns in the model
+        for given parent. In this case: A QTreeView with just one column
+        :param parent:
+        :return: int column count
+        """
         return 1
 
     def rowCount(self, parent):
+        """
+        Return the number of rows/children of this parent node
+
+        :param parent:
+        :return: int row count
+        """
         if parent.column() > 0:
             return 0
         parent_item = self.root_item if not parent.isValid() else parent.internalPointer()
         return len(parent_item.children)
 
     def data(self, index, role):
+        """
+        Return the data of this node, used to style the items
+
+        :param index:
+        :param role:
+        :return:
+        """
         if not index.isValid():
             return
 
@@ -144,7 +224,8 @@ class NetworkActivityLogger(QAbstractItemModel):
         elif role == STATUS_ROLE:
             return item.status
         elif role == Qt.ForegroundRole:
-            if isinstance(item, RequestParentItem) and item.ssl_errors or isinstance(item, SslErrorsItem) \
+            if isinstance(item, RequestParentItem) and item.ssl_errors \
+                    or isinstance(item, SslErrorsItem) \
                     or isinstance(index.parent().internalPointer(), SslErrorsItem):
                 color = QColor(180, 65, 210)
             elif item.status in (PENDING, CANCELED):
@@ -171,7 +252,15 @@ class NetworkActivityLogger(QAbstractItemModel):
     #     return Qt.ItemIsEnabled | Qt.ItemIsSelectable
 
     def index(self, row, column, parent_index):
+        """
+        Get the QModelIndex of the given cell/item and it's parent index
 
+        :param row:
+        :param column:
+        :param parent_index:
+        :return: QModelIndex
+        """
+        
         if not self.hasIndex(row, column, parent_index):
             return QModelIndex()
 
@@ -180,6 +269,12 @@ class NetworkActivityLogger(QAbstractItemModel):
         return self.createIndex(row, column, child_item)
 
     def parent(self, index):
+        """
+        Return the parent of given QModelIndex
+
+        :param index:
+        :return: QModelIndex
+        """
         if not index.isValid():
             return QModelIndex()
 
@@ -195,13 +290,22 @@ class NetworkActivityLogger(QAbstractItemModel):
             return "Requests"
 
     def clear(self):
+        """
+        Clear current model with Requests so we can start with a clean sheet.
+
+        """
         self.beginResetModel()
         self.root_item = RootItem()
         self.requests_items = {}
         self.endResetModel()
 
     def pause(self, state):
-        log.debug('NetworkLogger.pause, state: {}'.format(state))
+        """
+        Toggle the logging by temporary (dis)connecting the
+        requestAboutToBeCreated signal from our
+        request_about_to_be_created slot
+        :param state:
+        """
         if state == self.is_paused:
             return
 
@@ -214,6 +318,11 @@ class NetworkActivityLogger(QAbstractItemModel):
                 self.request_about_to_be_created)
 
     def remove_one(self):
+        """
+        Remove the first node of the list of RequestItems
+
+        :return:
+        """
         log.debug('Remove 1')
         self.beginRemoveRows(QModelIndex(), 0, 0)
         if len(self.root_item.children)>0:
@@ -221,6 +330,12 @@ class NetworkActivityLogger(QAbstractItemModel):
         self.endRemoveRows()
 
     def pop_nodes(self, count):
+        """
+        Pop 'count' nodes from the list, to be able to retain a fixed size
+        of items.
+
+        :param count: int number of nodes to remove/pop
+        """
         log.debug('Removing {} Request nodes.'.format(count))
         self.beginRemoveRows(QModelIndex(), 0, count-1)
         if len(self.root_item.children) > 0:
@@ -231,9 +346,12 @@ class NetworkActivityLogger(QAbstractItemModel):
 
 
 class ActivityProxyModel(QSortFilterProxyModel):
+    """
+    The ActivityProxyModel is a QSortFilterProxyModel so we can make our
+    QAbstractItemModel sortable / searchable
 
+    """
     def __init__(self, source_model, parent=None):
-
         super().__init__(parent)
         self.source_model = source_model
         self.setSourceModel(self.source_model)
@@ -268,6 +386,11 @@ class ActivityProxyModel(QSortFilterProxyModel):
 
 
 class ActivityTreeItem(object):
+    """
+    Parent class of all ActivityTreeItems sub classes.
+    An ActivityTreeItems is kept in the ActivityModel and able to keep the
+    information of it's NetworkActivity counter part
+    """
 
     def __init__(self, parent=None):
         self.parent = parent
@@ -276,9 +399,6 @@ class ActivityTreeItem(object):
            parent.children.append(self)
 
         self.status = COMPLETE
-
-    def span(self):
-        return False
 
     def text(self, column):
         return ''
@@ -312,7 +432,11 @@ class ActivityTreeItem(object):
         return op
 
     def position(self):
-        # return the place of myself in the list of children of my parent
+        """
+        Return the place of myself in the list of children of my parent.
+        Needed to create an index of myself.
+        :return: int
+        """
         # (this to be able to let the model know my 'row')
         if self.parent and self in self.parent.children:
             return self.parent.children.index(self)
@@ -320,12 +444,20 @@ class ActivityTreeItem(object):
 
 
 class RootItem(ActivityTreeItem):
+    """
+    'Invisible' root of the QTreeView
+    """
     def __init__(self, parent=None):
         super().__init__(parent)
 
 
 class RequestParentItem(ActivityTreeItem):
-
+    """
+    Every Request going via the NetworkAccessManager (NAM) fires a
+    RequestAboutToCreated signal upon we create this RequestParentItem which
+    acts as the parent of all information (both request AND later response) of
+    this Request
+    """
     def __init__(self, request, parent=None):
         super().__init__(parent)
         self.url = request.request().url()
@@ -353,9 +485,6 @@ class RequestParentItem(ActivityTreeItem):
 
         self.copy_as_curl_action = QAction('Copy as cURL')
         self.copy_as_curl_action.triggered.connect(self.copy_as_curl)
-
-    def span(self):
-        return True
 
     def text(self, column):
         if column == 0:
@@ -457,9 +586,6 @@ class RequestItem(ActivityTreeItem):
             return 'Only load from cache, error if no cached entry available'
         return None
 
-    def span(self):
-        return True
-
     def text(self, column):
         return 'Request' if column == 0 else ''
 
@@ -493,9 +619,6 @@ class RequestHeadersItem(ActivityTreeItem):
         else:
             return ''
 
-    def span(self):
-        return True
-
 
 class RequestQueryItems(ActivityTreeItem):
     def __init__(self, query_items, parent=None):
@@ -509,9 +632,6 @@ class RequestQueryItems(ActivityTreeItem):
             return 'Query'
         else:
             return ''
-
-    def span(self):
-        return True
 
 
 class PostContentItem(ActivityTreeItem):
@@ -531,9 +651,6 @@ class PostContentItem(ActivityTreeItem):
             return 'Content'
         else:
             return ''
-
-    def span(self):
-        return True
 
 
 class PostDetailsItem(ActivityTreeItem):
@@ -564,9 +681,6 @@ class ReplyItem(ActivityTreeItem):
 
         ReplyHeadersItem(reply, self)
 
-    def span(self):
-        return True
-
     def text(self, column):
         return 'Reply' if column == 0 else ''
 
@@ -584,9 +698,6 @@ class ReplyHeadersItem(ActivityTreeItem):
             return 'Headers'
         else:
             return ''
-
-    def span(self):
-        return True
 
 
 class ReplyDetailsItem(ActivityTreeItem):
@@ -616,6 +727,3 @@ class SslErrorsItem(ActivityTreeItem):
             return 'SSL errors'
         else:
             return ''
-
-    def span(self):
-        return True
