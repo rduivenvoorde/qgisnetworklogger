@@ -28,29 +28,21 @@ from qgis.gui import (
     QgsDockWidget,
     QgsFilterLineEdit
 )
+from qgis.utils import (
+    iface
+)
 
-from qgis.utils import iface
-from .activity_logger import ActivityProxyModel
-
-STATUS_ROLE = Qt.UserRole + 1
-
-PENDING = 'PENDING'
-COMPLETE = 'COMPLETE'
-ERROR = 'ERROR'
-TIMEOUT = 'TIMEOUT'
-CANCELED = 'CANCELED'
+from .model import ActivityProxyModel
 
 import logging
-log = logging.getLogger('QgisNetworkLogger')
+from . import LOGGER_NAME
+log = logging.getLogger(LOGGER_NAME)
 
 class ActivityView(QTreeView):
 
     def __init__(self, logger, parent=None):
         super().__init__(parent)
         self.model = logger
-
-        # self.setModel(self.model)
-        # self.proxy_model = None
         self.proxy_model = ActivityProxyModel(self.model, self)
         self.setModel(self.proxy_model)
 

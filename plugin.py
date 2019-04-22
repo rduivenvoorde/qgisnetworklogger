@@ -25,20 +25,22 @@ from qgis.PyQt.QtWidgets import (
     QShortcut
 )
 
-from .log_dock_widget import NetworkActivityDock
-from .activity_logger import NetworkActivityLogger
+from .ui import NetworkActivityDock
+from .model import NetworkActivityLogger
 
 import os
 '''
 Some magic to make it possible to use code like:
 
-log = logging.getLogger('QgisNetworkLogger')
-log.debug('foo')
+import logging
+from . import LOGGER_NAME
+log = logging.getLogger(LOGGER_NAME)
 
 in all this plugin code, and it will show up in the QgsMessageLog
 
 '''
 import logging
+from . import LOGGER_NAME
 from qgis.core import (
     Qgis,
     QgsMessageLog
@@ -58,12 +60,11 @@ class QgisLogHandler(logging.StreamHandler):
         msg=msg.replace('<', '&lt;').replace('>', '&gt;')
         QgsMessageLog.logMessage('{}'.format(msg), self.topic, Qgis.Info)
 
-log = logging.getLogger('QgisNetworkLogger')
+log = logging.getLogger(LOGGER_NAME)
 # checking below is needed, else we add this handler every time the plugin
-# is reloaded (during development) so the msg is emitted several times
+# is reloaded (during development), then the msg is emitted several times
 if not log.hasHandlers():
-    log.addHandler(QgisLogHandler('QgisNetworkLogger'))
-
+    log.addHandler(QgisLogHandler(LOGGER_NAME))
 
 # set logging level (NOTSET = no, else: DEBUG or INFO)
 log.setLevel(logging.DEBUG)

@@ -3,8 +3,10 @@
  This script initializes the plugin, making it known to QGIS.
 """
 
+LOGGER_NAME = 'QgisNetworkLogger'
+
 def classFactory(iface):
-  from .QgisNetworkLogger import QgisNetworkLogger
+  from .plugin import QgisNetworkLogger
   return QgisNetworkLogger(iface)
 
 

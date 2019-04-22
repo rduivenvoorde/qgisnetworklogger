@@ -43,7 +43,8 @@ from qgis.core import (
 )
 
 import logging
-log = logging.getLogger('QgisNetworkLogger')
+from . import LOGGER_NAME
+log = logging.getLogger(LOGGER_NAME)
 
 STATUS_ROLE = Qt.UserRole + 1
 
@@ -52,6 +53,218 @@ COMPLETE = 'COMPLETE'
 ERROR = 'ERROR'
 TIMEOUT = 'TIMEOUT'
 CANCELED = 'CANCELED'
+
+
+class NetworkActivityLogger(QAbstractItemModel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.root_item = RootItem()
+
+        self.is_paused = False
+
+        nam = QgsNetworkAccessManager.instance()
+
+        nam.requestAboutToBeCreated[QgsNetworkRequestParameters].connect(self.request_about_to_be_created)
+        nam.finished[QgsNetworkReplyContent].connect(self.request_finished)
+        nam.requestTimedOut[QgsNetworkRequestParameters].connect(self.request_timed_out)
+        nam.downloadProgress.connect(self.download_progress)
+        nam.requestEncounteredSslErrors.connect(self.ssl_errors)
+
+        self.requests_items = {}
+
+    def request_about_to_be_created(self, request_params):
+        child_count = len(self.root_item.children)
+        self.beginInsertRows(QModelIndex(), child_count, child_count)
+        self.requests_items[request_params.requestId()] = RequestParentItem(request_params, self.root_item)
+        self.endInsertRows()
+
+        NODES2RETAIN = 45  # put in some settings dialog?
+        if child_count > (NODES2RETAIN*1.2):  # 20% more as buffer
+            self.pop_nodes(child_count-NODES2RETAIN)
+
+    def request_finished(self, reply):
+        if not reply.requestId() in self.requests_items:
+            return
+        request_item = self.requests_items[reply.requestId()]
+        # find the row: the position of the RequestParentItem in the rootNode
+        request_index = self.createIndex(request_item.position(), 0, request_item)
+        self.beginInsertRows(request_index, len(request_item.children), len(request_item.children))
+        request_item.set_reply(reply)
+        self.endInsertRows()
+
+        self.dataChanged.emit(request_index, request_index)
+
+    def request_timed_out(self, reply):
+        if not reply.requestId() in self.requests_items:
+            return
+        request_item = self.requests_items[reply.requestId()]
+        request_index = self.createIndex(request_item.position(), 0, request_item)
+        request_item.set_timed_out()
+
+        self.dataChanged.emit(request_index, request_index)
+
+    def ssl_errors(self, requestId, errors):
+        if not requestId in self.requests_items:
+            return
+        request_item = self.requests_items[requestId]
+        request_index = self.createIndex(request_item.position(), 0, request_item)
+        self.beginInsertRows(request_index, len(request_item.children), len(request_item.children))
+        request_item.set_ssl_errors(errors)
+        self.endInsertRows()
+
+        self.dataChanged.emit(request_index, request_index)
+
+    def download_progress(self, requestId, received, total):
+        if not requestId in self.requests_items:
+            return
+        request_item = self.requests_items[requestId]
+        request_index = self.createIndex(request_item.position(), 0, request_item)
+        request_item.set_progress(received, total)
+
+        self.dataChanged.emit(request_index, request_index, [Qt.ToolTipRole])
+
+    def columnCount(self, parent):
+        return 1
+
+    def rowCount(self, parent):
+        if parent.column() > 0:
+            return 0
+        parent_item = self.root_item if not parent.isValid() else parent.internalPointer()
+        return len(parent_item.children)
+
+    def data(self, index, role):
+        if not index.isValid():
+            return
+
+        item = index.internalPointer()
+        if role == Qt.DisplayRole:
+            return item.text(index.column())
+        elif role == Qt.ToolTipRole:
+            return item.tooltip(index.column())
+        elif role == STATUS_ROLE:
+            return item.status
+        elif role == Qt.ForegroundRole:
+            if isinstance(item, RequestParentItem) and item.ssl_errors or isinstance(item, SslErrorsItem) \
+                    or isinstance(index.parent().internalPointer(), SslErrorsItem):
+                color = QColor(180, 65, 210)
+            elif item.status in (PENDING, CANCELED):
+                color = QColor(0, 0, 0, 100)
+            elif item.status == ERROR:
+                color = QColor(235, 10, 10)
+            elif item.status == TIMEOUT:
+                color = QColor(235, 10, 10)
+            else:
+                color = QColor(0, 0, 0)
+            return QBrush(color)
+
+        elif role == Qt.FontRole:
+            f = QFont()
+            if item.status == CANCELED:
+                f.setStrikeOut(True)
+            return f
+
+    # not sure why this raises exceptions but commenting for now
+    # is it used?
+    # def flags(self, index):
+    #     if not index.isValid():
+    #         return 0
+    #     return Qt.ItemIsEnabled | Qt.ItemIsSelectable
+
+    def index(self, row, column, parent_index):
+
+        if not self.hasIndex(row, column, parent_index):
+            return QModelIndex()
+
+        parent_item = self.root_item if not parent_index.isValid() else parent_index.internalPointer()
+        child_item = parent_item.children[row]
+        return self.createIndex(row, column, child_item)
+
+    def parent(self, index):
+        if not index.isValid():
+            return QModelIndex()
+
+        parent_item = index.internalPointer().parent
+        if parent_item.parent is None:
+            return QModelIndex()
+
+        parent_index_in_grandparent = parent_item.parent.children.index(parent_item)
+        return self.createIndex(parent_index_in_grandparent, 0, parent_item)
+
+    def headerData(self, section, orientation, role):
+        if section == 0 and orientation == Qt.Horizontal and role == Qt.DisplayRole:
+            return "Requests"
+
+    def clear(self):
+        self.beginResetModel()
+        self.root_item = RootItem()
+        self.requests_items = {}
+        self.endResetModel()
+
+    def pause(self, state):
+        log.debug('NetworkLogger.pause, state: {}'.format(state))
+        if state == self.is_paused:
+            return
+
+        self.is_paused = state
+        if self.is_paused:
+            QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].disconnect(
+                self.request_about_to_be_created)
+        else:
+            QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].connect(
+                self.request_about_to_be_created)
+
+    def remove_one(self):
+        log.debug('Remove 1')
+        self.beginRemoveRows(QModelIndex(), 0, 0)
+        if len(self.root_item.children)>0:
+            self.root_item.children.pop(0)
+        self.endRemoveRows()
+
+    def pop_nodes(self, count):
+        log.debug('Removing {} Request nodes.'.format(count))
+        self.beginRemoveRows(QModelIndex(), 0, count-1)
+        if len(self.root_item.children) > 0:
+            self.root_item.children = self.root_item.children[count:]
+        self.endRemoveRows()
+
+
+
+
+class ActivityProxyModel(QSortFilterProxyModel):
+
+    def __init__(self, source_model, parent=None):
+
+        super().__init__(parent)
+        self.source_model = source_model
+        self.setSourceModel(self.source_model)
+        self.filter_string = ''
+        self.show_successful = True
+        self.show_timeouts = True
+
+    def set_filter_string(self, string):
+        self.filter_string = string
+        self.invalidateFilter()
+
+    def set_show_successful(self, show):
+        self.show_successful = show
+        self.invalidateFilter()
+
+    def set_show_timeouts(self, show):
+        self.show_timeouts = show
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, sourceRow, sourceParent):
+        item = self.source_model.index(sourceRow, 0, sourceParent).internalPointer()
+        if isinstance(item, RequestParentItem):
+            if item.status in (COMPLETE, CANCELED) and not self.show_successful:
+                return False
+            elif item.status == TIMEOUT and not self.show_timeouts:
+                return False
+
+            return self.filter_string.lower() in item.url.url().lower()
+        else:
+            return True
+
 
 
 class ActivityTreeItem(object):
@@ -406,214 +619,3 @@ class SslErrorsItem(ActivityTreeItem):
 
     def span(self):
         return True
-
-
-class NetworkActivityLogger(QAbstractItemModel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.root_item = RootItem()
-
-        self.is_paused = False
-
-        nam = QgsNetworkAccessManager.instance()
-
-        nam.requestAboutToBeCreated[QgsNetworkRequestParameters].connect(self.request_about_to_be_created)
-        nam.finished[QgsNetworkReplyContent].connect(self.request_finished)
-        nam.requestTimedOut[QgsNetworkRequestParameters].connect(self.request_timed_out)
-        nam.downloadProgress.connect(self.download_progress)
-        nam.requestEncounteredSslErrors.connect(self.ssl_errors)
-
-        self.requests_items = {}
-
-    def request_about_to_be_created(self, request_params):
-        child_count = len(self.root_item.children)
-        self.beginInsertRows(QModelIndex(), child_count, child_count)
-        self.requests_items[request_params.requestId()] = RequestParentItem(request_params, self.root_item)
-        self.endInsertRows()
-
-        NODES2RETAIN = 45  # put in some settings dialog?
-        if child_count > (NODES2RETAIN*1.2):  # 20% more as buffer
-            self.pop_nodes(child_count-NODES2RETAIN)
-
-    def request_finished(self, reply):
-        if not reply.requestId() in self.requests_items:
-            return
-        request_item = self.requests_items[reply.requestId()]
-        # find the row: the position of the RequestParentItem in the rootNode
-        request_index = self.createIndex(request_item.position(), 0, request_item)
-        self.beginInsertRows(request_index, len(request_item.children), len(request_item.children))
-        request_item.set_reply(reply)
-        self.endInsertRows()
-
-        self.dataChanged.emit(request_index, request_index)
-
-    def request_timed_out(self, reply):
-        if not reply.requestId() in self.requests_items:
-            return
-        request_item = self.requests_items[reply.requestId()]
-        request_index = self.createIndex(request_item.position(), 0, request_item)
-        request_item.set_timed_out()
-
-        self.dataChanged.emit(request_index, request_index)
-
-    def ssl_errors(self, requestId, errors):
-        if not requestId in self.requests_items:
-            return
-        request_item = self.requests_items[requestId]
-        request_index = self.createIndex(request_item.position(), 0, request_item)
-        self.beginInsertRows(request_index, len(request_item.children), len(request_item.children))
-        request_item.set_ssl_errors(errors)
-        self.endInsertRows()
-
-        self.dataChanged.emit(request_index, request_index)
-
-    def download_progress(self, requestId, received, total):
-        if not requestId in self.requests_items:
-            return
-        request_item = self.requests_items[requestId]
-        request_index = self.createIndex(request_item.position(), 0, request_item)
-        request_item.set_progress(received, total)
-
-        self.dataChanged.emit(request_index, request_index, [Qt.ToolTipRole])
-
-    def columnCount(self, parent):
-        return 1
-
-    def rowCount(self, parent):
-        if parent.column() > 0:
-            return 0
-        parent_item = self.root_item if not parent.isValid() else parent.internalPointer()
-        return len(parent_item.children)
-
-    def data(self, index, role):
-        if not index.isValid():
-            return
-
-        item = index.internalPointer()
-        if role == Qt.DisplayRole:
-            return item.text(index.column())
-        elif role == Qt.ToolTipRole:
-            return item.tooltip(index.column())
-        elif role == STATUS_ROLE:
-            return item.status
-        elif role == Qt.ForegroundRole:
-            if isinstance(item, RequestParentItem) and item.ssl_errors or isinstance(item, SslErrorsItem) \
-                    or isinstance(index.parent().internalPointer(), SslErrorsItem):
-                color = QColor(180, 65, 210)
-            elif item.status in (PENDING, CANCELED):
-                color = QColor(0, 0, 0, 100)
-            elif item.status == ERROR:
-                color = QColor(235, 10, 10)
-            elif item.status == TIMEOUT:
-                color = QColor(235, 10, 10)
-            else:
-                color = QColor(0, 0, 0)
-            return QBrush(color)
-
-        elif role == Qt.FontRole:
-            f = QFont()
-            if item.status == CANCELED:
-                f.setStrikeOut(True)
-            return f
-
-    # not sure why this raises exceptions but commenting for now
-    # is it used?
-    # def flags(self, index):
-    #     if not index.isValid():
-    #         return 0
-    #     return Qt.ItemIsEnabled | Qt.ItemIsSelectable
-
-    def index(self, row, column, parent_index):
-
-        if not self.hasIndex(row, column, parent_index):
-            return QModelIndex()
-
-        parent_item = self.root_item if not parent_index.isValid() else parent_index.internalPointer()
-        child_item = parent_item.children[row]
-        return self.createIndex(row, column, child_item)
-
-    def parent(self, index):
-        if not index.isValid():
-            return QModelIndex()
-
-        parent_item = index.internalPointer().parent
-        if parent_item.parent is None:
-            return QModelIndex()
-
-        parent_index_in_grandparent = parent_item.parent.children.index(parent_item)
-        return self.createIndex(parent_index_in_grandparent, 0, parent_item)
-
-    def headerData(self, section, orientation, role):
-        if section == 0 and orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            return "Requests"
-
-    def clear(self):
-        self.beginResetModel()
-        self.root_item = RootItem()
-        self.requests_items = {}
-        self.endResetModel()
-
-    def pause(self, state):
-        log.debug('NetworkLogger.pause, state: {}'.format(state))
-        if state == self.is_paused:
-            return
-
-        self.is_paused = state
-        if self.is_paused:
-            QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].disconnect(
-                self.request_about_to_be_created)
-        else:
-            QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].connect(
-                self.request_about_to_be_created)
-
-    def remove_one(self):
-        log.debug('Remove 1')
-        self.beginRemoveRows(QModelIndex(), 0, 0)
-        if len(self.root_item.children)>0:
-            self.root_item.children.pop(0)
-        self.endRemoveRows()
-
-    def pop_nodes(self, count):
-        log.debug('Removing {} Request nodes.'.format(count))
-        self.beginRemoveRows(QModelIndex(), 0, count-1)
-        if len(self.root_item.children) > 0:
-            self.root_item.children = self.root_item.children[count:]
-        self.endRemoveRows()
-
-
-
-
-class ActivityProxyModel(QSortFilterProxyModel):
-
-    def __init__(self, source_model, parent=None):
-
-        super().__init__(parent)
-        self.source_model = source_model
-        self.setSourceModel(self.source_model)
-        self.filter_string = ''
-        self.show_successful = True
-        self.show_timeouts = True
-
-    def set_filter_string(self, string):
-        self.filter_string = string
-        self.invalidateFilter()
-
-    def set_show_successful(self, show):
-        self.show_successful = show
-        self.invalidateFilter()
-
-    def set_show_timeouts(self, show):
-        self.show_timeouts = show
-        self.invalidateFilter()
-
-    def filterAcceptsRow(self, sourceRow, sourceParent):
-        item = self.source_model.index(sourceRow, 0, sourceParent).internalPointer()
-        if isinstance(item, RequestParentItem):
-            if item.status in (COMPLETE, CANCELED) and not self.show_successful:
-                return False
-            elif item.status == TIMEOUT and not self.show_timeouts:
-                return False
-
-            return self.filter_string.lower() in item.url.url().lower()
-        else:
-            return True
