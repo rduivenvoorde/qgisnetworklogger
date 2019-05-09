@@ -317,18 +317,6 @@ class ActivityModel(QAbstractItemModel):
             QgsNetworkAccessManager.instance().requestAboutToBeCreated[QgsNetworkRequestParameters].connect(
                 self.request_about_to_be_created)
 
-    def remove_one(self):
-        """
-        Remove the first node of the list of RequestItems
-
-        :return:
-        """
-        log.debug('Remove 1')
-        self.beginRemoveRows(QModelIndex(), 0, 0)
-        if len(self.root_item.children)>0:
-            self.root_item.children.pop(0)
-        self.endRemoveRows()
-
     def pop_nodes(self, count):
         """
         Pop 'count' nodes from the list, to be able to retain a fixed size
@@ -493,6 +481,8 @@ class RequestParentItem(ActivityTreeItem):
         return ''
 
     def open_url(self):
+        """Open (GET) the url of this RequestParentItem in the default browser
+        of the user"""
         QDesktopServices.openUrl(self.url)
 
     def copy_as_curl(self):

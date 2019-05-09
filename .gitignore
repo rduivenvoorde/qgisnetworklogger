@@ -1,2 +1,11 @@
-.idea
 __pycache__
+# pycharm
+.idea
+# pydev
+.project
+.pydevproject
+.settings
+# Eric 6 ide
+.eric6project
+*.e4p
+
