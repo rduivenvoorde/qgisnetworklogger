@@ -25,4 +25,4 @@ experimental=False
 
 about=This plugin tries to log the requests that go via the QgsNetworkAccessManager
 
-icon=icons/icon.png
+icon=icons/icon.svg
