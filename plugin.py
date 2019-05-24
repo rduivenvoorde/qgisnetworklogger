@@ -50,7 +50,7 @@ class QgisNetworkLogger:
 
     def initGui(self):
         # Create action that will start the plugin
-        self.action = QAction(QIcon(os.path.dirname(__file__) + '/icons/icon.png'), '&QGIS Network Logger',
+        self.action = QAction(QIcon(os.path.dirname(__file__) + '/icons/icon.svg'), '&QGIS Network Logger',
                               self.iface.mainWindow())
         # connect the action to the run method
         #self.action.triggered.connect(self.show_dialog)
