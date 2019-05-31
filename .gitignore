@@ -8,4 +8,5 @@ __pycache__
 # Eric 6 ide
 .eric6project
 *.e4p
+repo
 

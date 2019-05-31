@@ -2,9 +2,12 @@
 name=QGIS Network Logger
 qgisMinimumVersion=3.5
 qgisMaximumVersion=3.99
-description=This plugin tries to log the HTTP(s) requests that go via the QgsNetworkAccessManager.
-  So you can see ALL requests which are fired from within QGIS or plugins.
-  Thanks to Alessandro Pasotti for the last push, and Nyall Dawson for all the work!
+description=Show the requests that go from QGIS (>3.5) to online services via the QgsNetworkAccessManager.
+about=This plugin tries to log the HTTP(s) requests, headers etc. that are sent via the QgsNetworkAccessManager.
+  You can see all requests (and response information) which are fired from within QGIS to debug your WMS/WFS/data services.
+  It is possible to replay the GET requests in your browser or other requests via CURL.
+  Note that plugins or code that sents http via another route then QgsNetworkAccessManager (like GDAL, or plugins using Requests) are NOT shown.
+  Thanks to Alessandro Pasotti for the last push, and Nyall Dawson for all the work he did!
 version=0.1.0
 author=Richard Duivenvoorde
 email=richard@duif.net
@@ -22,7 +25,5 @@ repository=https://github.com/rduivenvoorde/qgisnetworklogger
 category=web
 
 experimental=False
-
-about=This plugin tries to log the requests that go via the QgsNetworkAccessManager
 
 icon=icons/icon.svg

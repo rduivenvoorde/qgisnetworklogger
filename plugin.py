@@ -53,7 +53,6 @@ class QgisNetworkLogger:
         self.action = QAction(QIcon(os.path.dirname(__file__) + '/icons/icon.svg'), '&QGIS Network Logger',
                               self.iface.mainWindow())
         # connect the action to the run method
-        #self.action.triggered.connect(self.show_dialog)
         self.action.triggered.connect(self.toggle_dock)
         # Add menu item
         self.iface.addPluginToMenu('QGIS Network Logger', self.action)
@@ -85,14 +84,3 @@ class QgisNetworkLogger:
         else:
             self.dock.toggleUserVisible()
 
-    def show_dialog(self):
-        # this was a warning, not sure if we want to show it...
-        QMessageBox.information(
-            self.iface.mainWindow(),
-            QCoreApplication.translate('QGISNetworkLogger', 'QGIS Network Logger'),
-            QCoreApplication.translate('QGISNetworkLogger', 'See LogMessages Panel.\n\n'
-                                                            'Note that not ALL messages are seen here...\n\n'
-                                                            'Only listening to the requestAboutToBeCreated and requestTimedOut signals.\n\n'
-                                                            'if you want more: see code'))
-        self.toggle_dock()
-        return

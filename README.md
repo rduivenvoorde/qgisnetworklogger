@@ -16,7 +16,7 @@ Current limitations:
 
 To use:
 - install plugin
-- open the Network Activity panel
+- open the Network Activity panel (F12)
 - open/edit some OGC OWS services
 
 An Example:
