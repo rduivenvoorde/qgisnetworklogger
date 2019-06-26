@@ -1,12 +1,9 @@
 #/***************************************************************************
-# RIVM_PluginConfigManager
+# QGIS Network Logger
 #
-# Plugin to manage the different dev/acc/prd configuration profiles of different RIVM plugins
-#							 -------------------
-#		begin				: 2017-08-21
-#		git sha				: $Format:%H$
-#		copyright			: (C) 2017 by RIVM
-#		email				: marnix.de.ridder@rivm.nl
+# Show the requests that go from QGIS (>=3.6) to online services via the QgsNetworkAccessManager.
+#		copyright			: (C) 2019-now by Richard Duivenvoorde
+#		email				: richard@duif.net
 # ***************************************************************************/
 #
 #/***************************************************************************
@@ -22,37 +19,20 @@
 # Edit the following to match your sources lists
 #################################################
 
-
-#Add iso code for any locales you want to support here (space separated)
-# default is no locales
-# LOCALES = af
-LOCALES = af
-
 VERSION=$(shell cat metadata.txt | grep version= | sed -e 's,version=,,')
 
-# If locales are enabled, set the name of the lrelease binary on your system. If
-# you have trouble compiling the translations, you may have to specify the full path to
-# lrelease
-LRELEASE = lrelease
-
-
-# translation
-SOURCES = \
-	__init__.py \
-	rivm_plugin_config_manager.py rivm_plugin_config_manager_dialog.py
-
-PLUGINNAME = RIVM_PluginConfigManager
+PLUGINNAME = qgisnetworklogger
 
 PY_FILES = \
 	*.py
 
-UI_FILES = rivm_plugin_config_manager_dialog_base.ui
+UI_FILES =
 
 EXTRAS = metadata.txt
 
-EXTRA_DIRS =
+EXTRA_DIRS = img icons
 
-COMPILED_RESOURCE_FILES = resources.py
+COMPILED_RESOURCE_FILES =
 
 PEP8EXCLUDE=pydev,resources.py,conf.py,third_party,ui
 
@@ -61,11 +41,7 @@ PEP8EXCLUDE=pydev,resources.py,conf.py,third_party,ui
 # Normally you would not need to edit below here
 #################################################
 
-HELP = help/build/html
-
-RESOURCE_SRC=$(shell grep '^ *<file' resources.qrc | sed 's@</file>@@g;s/.*>//g' | tr '\n' ' ')
-
-QGISDIR=/home/richard/.local/share/QGIS/QGIS3/profiles/default
+QGISDIR=.local/share/QGIS/QGIS3/profiles/default
 
 default: compile
 
@@ -77,26 +53,7 @@ compile: $(COMPILED_RESOURCE_FILES)
 %.qm : %.ts
 	$(LRELEASE) $<
 
-test: compile transcompile
-	@echo
-	@echo "----------------------"
-	@echo "Regression Test Suite"
-	@echo "----------------------"
-
-	@# Preceding dash means that make will continue in case of errors
-	@-export PYTHONPATH=`pwd`:$(PYTHONPATH); \
-		export QGIS_DEBUG=0; \
-		export QGIS_LOG_FILE=/dev/null; \
-		nosetests -v --with-id --with-coverage --cover-package=. \
-		3>&1 1>&2 2>&3 3>&- || true
-	@echo "----------------------"
-#	@echo "If you get a 'no module named qgis.core error, try sourcing"
-#	@echo "the helper script we have provided first then run make test."
-#	@echo "e.g. source run-env-linux.sh <path to qgis install>; make test"
-#	@echo "----------------------"
-
-#deploy: compile doc transcompile
-deploy: compile transcompile
+deploy: compile
 	@echo
 	@echo "------------------------------------------"
 	@echo "Deploying plugin to your .qgis2 directory."
@@ -106,14 +63,12 @@ deploy: compile transcompile
 	# $HOME/$(QGISDIR)/python/plugins
 	mkdir -p $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
 	cp -vf $(PY_FILES) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
-	cp -vf $(UI_FILES) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
-	cp -vf $(COMPILED_RESOURCE_FILES) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
+	#cp -vf $(UI_FILES) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
+	#cp -vf $(COMPILED_RESOURCE_FILES) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
 	cp -vf $(EXTRAS) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
-	cp -vfr i18n $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
+	cp -vfr $(EXTRA_DIRS) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
+	#cp -vfr i18n $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
 	#cp -vfr $(HELP) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)/help
-	# Copy extra directories if any
-  # (temporarily removed)
-
 
 # The dclean target removes compiled python files from plugin directory
 # also deletes any .git entry
@@ -140,8 +95,8 @@ zip: derase deploy dclean
 	@echo "---------------------------"
 	# The zip target deploys the plugin and creates a zip file with the deployed
 	# content. You can then upload the zip file on http://plugins.qgis.org
-	rm -f $(CURDIR)/../repo/$(PLUGINNAME).$(VERSION).zip
-	cd $(HOME)/$(QGISDIR)/python/plugins; zip -9r $(CURDIR)/../repo/$(PLUGINNAME).$(VERSION).zip $(PLUGINNAME)
+	rm -f $(CURDIR)/repo/$(PLUGINNAME).$(VERSION).zip
+	cd $(HOME)/$(QGISDIR)/python/plugins; zip -9r $(CURDIR)/repo/$(PLUGINNAME).$(VERSION).zip $(PLUGINNAME)
 
 package: compile
 	# Create a zip package of the plugin named $(PLUGINNAME).zip.
@@ -157,65 +112,9 @@ package: compile
 	git archive --prefix=$(PLUGINNAME)/ -o $(PLUGINNAME).zip $(VERSION)
 	echo "Created package: $(PLUGINNAME).zip"
 
-transup:
-	@echo
-	@echo "------------------------------------------------"
-	@echo "Updating translation files with any new strings."
-	@echo "------------------------------------------------"
-	@chmod +x scripts/update-strings.sh
-	@scripts/update-strings.sh $(LOCALES)
-
-transcompile:
-	@echo
-	@echo "----------------------------------------"
-	@echo "Compiled translation files to .qm files."
-	@echo "----------------------------------------"
-	@chmod +x scripts/compile-strings.sh
-	@scripts/compile-strings.sh $(LRELEASE) $(LOCALES)
-
-transclean:
-	@echo
-	@echo "------------------------------------"
-	@echo "Removing compiled translation files."
-	@echo "------------------------------------"
-	rm -f i18n/*.qm
-
 clean:
 	@echo
 	@echo "------------------------------------"
 	@echo "Removing uic and rcc generated files"
 	@echo "------------------------------------"
 	rm $(COMPILED_UI_FILES) $(COMPILED_RESOURCE_FILES)
-
-doc:
-	@echo
-	@echo "------------------------------------"
-	@echo "Building documentation using sphinx."
-	@echo "------------------------------------"
-	cd help; make html
-
-pylint:
-	@echo
-	@echo "-----------------"
-	@echo "Pylint violations"
-	@echo "-----------------"
-	@pylint --reports=n --rcfile=pylintrc . || true
-	@echo
-	@echo "----------------------"
-	@echo "If you get a 'no module named qgis.core' error, try sourcing"
-	@echo "the helper script we have provided first then run make pylint."
-	@echo "e.g. source run-env-linux.sh <path to qgis install>; make pylint"
-	@echo "----------------------"
-
-
-# Run pep8 style checking
-#http://pypi.python.org/pypi/pep8
-pep8:
-	@echo
-	@echo "-----------"
-	@echo "PEP8 issues"
-	@echo "-----------"
-	@pep8 --repeat --ignore=E203,E121,E122,E123,E124,E125,E126,E127,E128 --exclude $(PEP8EXCLUDE) . || true
-	@echo "-----------"
-	@echo "Ignored in PEP8 check:"
-	@echo $(PEP8EXCLUDE)
