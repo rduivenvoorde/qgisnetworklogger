@@ -1,19 +1,23 @@
 [general]
 name=QGIS Network Logger
 qgisMinimumVersion=3.6
-qgisMaximumVersion=3.99
-description=Show the requests that go from QGIS (>3.5) to online services via the QgsNetworkAccessManager.
-about=This plugin tries to log the HTTP(s) requests, headers etc. that are sent via the QgsNetworkAccessManager.
+qgisMaximumVersion=3.12
+description=Show the request's that go from QGIS (>3.5 but <= 3.12) to online services via the QgsNetworkAccessManager.
+about=IMPORTANT: you do NOT need this plugin if running QGIS 3.14 or higher!
+  Networklogging is in QGIS itself since QGIS Pi / 3.14. Just press F12!
+
+  This plugin tries to log the HTTP(s) requests, headers etc. that are sent via the QgsNetworkAccessManager.
   You can see all requests (and response information) which are fired from within QGIS to debug your WMS/WFS/data services.
   It is possible to replay the GET requests in your browser or other requests via CURL.
   Note that plugins or code that sents http via another route then QgsNetworkAccessManager (like GDAL, or plugins using Requests) are NOT shown.
   Thanks to Alessandro Pasotti for the last push, and Nyall Dawson for all the work he did!
   You need QGIS 3.6 because the nessecary signals are not available yet in earlier versions.
-version=0.2.0
+version=0.3.0
 author=Richard Duivenvoorde
 email=richard@duif.net
 
 changelog=
+    0.3.0 Last public version :-) as The NetworkLogger is taken into the core functionality of QGIS 3.14 (Pi)
     0.2.0 First public version
     0.1.0 Initial (non public) version
 
