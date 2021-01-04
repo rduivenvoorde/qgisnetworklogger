@@ -1,5 +1,9 @@
 Experimental QGIS plugin to be able to see the request QGIS is firing to for example OGC services
 
+**IMPORTANT NOTE: Nyall ported the plugin (and made it much better) to c++ into QGIS core in QGIS 3.14.**
+
+**So: you will NOT need this plugin whey you are using QGIS >= 3.14**
+
 A BIG thanks goes to Nyall Dawson!! Current Treeview is his idea and work!
 
 Features (see screenshot below):
