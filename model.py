@@ -471,6 +471,9 @@ class RequestParentItem(ActivityTreeItem):
         self.open_url_action = QAction('Open URL')
         self.open_url_action.triggered.connect(self.open_url)
 
+        self.copy_url_action = QAction('Copy  URL')
+        self.copy_url_action.triggered.connect(self.copy_url)
+
         self.copy_as_curl_action = QAction('Copy as cURL')
         self.copy_as_curl_action.triggered.connect(self.copy_as_curl)
 
@@ -484,6 +487,11 @@ class RequestParentItem(ActivityTreeItem):
         """Open (GET) the url of this RequestParentItem in the default browser
         of the user"""
         QDesktopServices.openUrl(self.url)
+
+    def copy_url(self):
+        """Copy the URL to clipboard
+        """
+        QApplication.clipboard().setText(self.url.url())
 
     def copy_as_curl(self):
         """Get url + headers + data and create a full curl command
@@ -522,7 +530,7 @@ class RequestParentItem(ActivityTreeItem):
         SslErrorsItem(errors, self)
 
     def actions(self):
-        return [self.open_url_action, self.copy_as_curl_action]
+        return [self.open_url_action, self.copy_url_action, self.copy_as_curl_action]
 
     def tooltip(self, column):
         bytes = 'unknown'
